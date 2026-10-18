@@ -1,0 +1,37 @@
+/* Gemeinsamer Menü-Stil: flach, dunkel, weiße Akzente (wie das Inventar) */
+:root { --mx-bg: rgba(10, 14, 21, 0.9); --mx-tile: rgba(255, 255, 255, 0.05); --mx-line: rgba(255, 255, 255, 0.14); --mx-hi: #f4f7fb; }
+
+/* Charaktererstellung */
+#creator { background: radial-gradient(ellipse at 50% 55%, rgba(24, 32, 46, 0.6), rgba(3, 5, 9, 0.94) 80%); font-family: 'Bahnschrift', 'Segoe UI', system-ui, sans-serif; }
+#creator .cc-sheet { background: var(--mx-bg); border: 0; border-top: 1px solid var(--mx-line); border-radius: 0; box-shadow: none; }
+#creator .cc-sheet header, #creator .cc-sheet footer { background: transparent; border-color: var(--mx-line); }
+#creator .cc-sheet h2 { color: var(--mx-hi); letter-spacing: 0.3em; font-weight: 600; }
+#creator .cc-cols h3 { color: #aab6c9; letter-spacing: 0.24em; font-weight: 600; }
+#creator .cc-sheet input { background: rgba(255, 255, 255, 0.06); border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.3); border-radius: 0; color: var(--mx-hi); }
+#creator .card { background: var(--mx-tile); border: 1px solid transparent; border-radius: 0; }
+#creator .card:hover { background: rgba(255, 255, 255, 0.12); border-color: transparent; box-shadow: inset 2px 0 0 #fff; }
+#creator .card.sel { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.55); }
+#creator .pts { background: var(--mx-tile); border: 0; border-radius: 0; }
+#creator .sk li { border-bottom-color: rgba(255, 255, 255, 0.1); }
+#creator .cc-sheet button:not(.card) { background: transparent; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 0; color: #e7ecf3; letter-spacing: 0.1em; text-transform: uppercase; font-size: 12px; }
+#creator .cc-sheet button:not(.card):hover { background: #e7ecf3; color: #0a0e15; }
+#creator .cc-sheet button.go { background: #f4f7fb; color: #0a0e15; border-color: #f4f7fb; }
+#creator .cc-sheet button.go:hover { background: #fff; }
+
+/* Spielstände */
+#savemenu { background: radial-gradient(ellipse at 50% 55%, rgba(24, 32, 46, 0.6), rgba(3, 5, 9, 0.94) 80%); }
+#savemenu .svbox { background: var(--mx-bg); border: 0; border-top: 1px solid var(--mx-line); box-shadow: none; }
+#savemenu header { border-bottom-color: var(--mx-line); }
+#savemenu h2 { color: var(--mx-hi); font-weight: 600; }
+#savemenu .x, #savemenu button { background: transparent; border: 1px solid rgba(255, 255, 255, 0.4); color: #e7ecf3; border-radius: 0; }
+#savemenu .x:hover, #savemenu button:hover { background: #e7ecf3; color: #0a0e15; border-color: #e7ecf3; }
+#savemenu button.go { background: #f4f7fb; color: #0a0e15; }
+#savemenu .svslot { background: var(--mx-tile); border-color: transparent; }
+#savemenu .svslot:hover { background: rgba(255, 255, 255, 0.12); }
+#savemenu .svslot.sel { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.55); box-shadow: none; }
+#savemenu .svthumb { border-color: var(--mx-line); }
+#savemenu .svnew { border-top-color: var(--mx-line); }
+
+/* Handwerk, Fraktionen, Dialoge */
+.panel.inv, #dialog.panel { background: var(--mx-bg); border: 0; border-top: 1px solid var(--mx-line); border-radius: 0; box-shadow: none; }
+.panel.inv button, #dialog.panel button { border-radius: 0; }

@@ -1,0 +1,57 @@
+/* Spielstände und Ladebildschirm */
+#savemenu { position: fixed; inset: 0; z-index: 140; display: none; place-items: center; background: rgba(2, 5, 10, 0.78); backdrop-filter: blur(3px); font-family: var(--font-hud, system-ui); color: #dbe9fb; }
+#savemenu.on { display: grid; animation: smin 0.16s ease-out; }
+@keyframes smin { from { opacity: 0; transform: scale(0.985); } }
+#savemenu .svbox { width: min(860px, 94vw); max-height: 88vh; display: flex; flex-direction: column; background: linear-gradient(160deg, rgba(14, 26, 46, 0.98), rgba(6, 12, 22, 0.99)); border: 1px solid rgba(150, 185, 230, 0.5); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7); }
+#savemenu header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid rgba(150, 185, 230, 0.35); }
+#savemenu h2 { margin: 0; font: 700 18px var(--font-hud, system-ui); letter-spacing: 0.3em; text-transform: uppercase; color: #cfe6ff; }
+#savemenu .x { width: 34px; height: 34px; font-size: 22px; line-height: 1; color: #cfe2fa; background: none; border: 1px solid rgba(150, 185, 230, 0.4); cursor: pointer; }
+#savemenu .x:hover { background: rgba(255, 255, 255, 0.1); }
+#savemenu .svslots { flex: 1; min-height: 140px; overflow-y: auto; padding: 12px 14px; display: grid; gap: 8px; scrollbar-width: thin; scrollbar-color: #4b6c96 transparent; }
+#savemenu .svnone { padding: 40px 10px; text-align: center; color: rgba(190, 215, 245, 0.55); }
+#savemenu .svslot { display: grid; grid-template-columns: 176px 1fr auto; gap: 14px; align-items: center; padding: 8px; border: 1px solid rgba(150, 185, 230, 0.22); background: rgba(150, 185, 230, 0.05); cursor: pointer; transition: background 0.12s, border-color 0.12s, transform 0.12s; }
+#savemenu .svslot:hover { background: rgba(150, 185, 230, 0.12); }
+#savemenu .svslot.sel { border-color: #cfe6ff; background: rgba(120, 170, 230, 0.18); box-shadow: 0 0 14px rgba(150, 200, 255, 0.25); }
+#savemenu .svthumb { width: 176px; height: 99px; display: grid; place-items: center; background: #05090f; border: 1px solid rgba(150, 185, 230, 0.3); color: rgba(190, 215, 245, 0.4); font-size: 12px; overflow: hidden; }
+#savemenu .svthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#savemenu .svinfo { display: grid; gap: 3px; min-width: 0; }
+#savemenu .svinfo b { font-size: 17px; letter-spacing: 0.06em; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#savemenu .svinfo em { margin-left: 8px; padding: 1px 6px; font: 600 10px var(--font-hud, system-ui); font-style: normal; letter-spacing: 0.14em; text-transform: uppercase; color: #a8e0b8; border: 1px solid #6ab07c; }
+#savemenu .svinfo span { font-size: 13px; color: #b8d0ee; }
+#savemenu .svinfo small { font-size: 11.5px; color: rgba(190, 215, 245, 0.5); }
+#savemenu .svinfo input, #savemenu .svnew input { padding: 7px 10px; font: 15px system-ui; color: #fff; background: rgba(5, 10, 20, 0.85); border: 1px solid #8db4e2; outline: 0; }
+#savemenu .svact { display: flex; flex-direction: column; gap: 5px; }
+#savemenu button { padding: 6px 12px; font: 600 11px var(--font-hud, system-ui); letter-spacing: 0.12em; text-transform: uppercase; color: #cfe2fa; background: rgba(93, 140, 196, 0.16); border: 1px solid rgba(150, 185, 230, 0.5); cursor: pointer; white-space: nowrap; }
+#savemenu button:hover { background: rgba(120, 170, 230, 0.32); border-color: #cfe6ff; color: #fff; }
+#savemenu button.danger:hover, #savemenu .svconfirm button:first-of-type { background: rgba(200, 70, 60, 0.4); border-color: #ff8a7e; }
+#savemenu button.go { color: #08121f; background: linear-gradient(180deg, #cfe6ff, #8db4e2); border-color: #fff; }
+#savemenu .svconfirm { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12.5px; color: #ffb0a6; }
+#savemenu .svnew { display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid rgba(150, 185, 230, 0.25); }
+#savemenu .svnew input { flex: 1; }
+#savemenu footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid rgba(150, 185, 230, 0.35); font-size: 12px; color: rgba(190, 215, 245, 0.55); }
+@media (max-width: 700px) { #savemenu .svslot { grid-template-columns: 1fr; } #savemenu .svthumb { width: 100%; height: auto; aspect-ratio: 16 / 9; } #savemenu .svact { flex-direction: row; } }
+
+/* Ladebildschirm */
+#loading { position: fixed; inset: 0; z-index: 130; display: none; place-items: center; font-family: var(--font-hud, system-ui); color: #dbe9fb; background: #03060c; }
+#loading.on { display: grid; }
+#loading.out { animation: ldout 0.6s ease-in forwards; }
+@keyframes ldout { to { opacity: 0; transform: scale(1.03); } }
+#loading .ld-bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(40, 80, 140, 0.35), transparent 60%), radial-gradient(ellipse at 80% 90%, rgba(120, 60, 30, 0.2), transparent 55%); animation: ldbg 6s ease-in-out infinite alternate; }
+@keyframes ldbg { to { transform: scale(1.08) translateY(-1%); opacity: 0.8; } }
+#loading .ld-center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 22px; width: min(520px, 86vw); }
+#loading .ld-logo { text-align: center; }
+#loading .ld-logo span { display: block; font: 800 clamp(34px, 6vw, 60px) var(--font-hud, system-ui); letter-spacing: 0.32em; text-indent: 0.32em; color: #fff; text-shadow: 0 0 24px rgba(150, 200, 255, 0.55); animation: ldpulse 2.6s ease-in-out infinite; }
+#loading .ld-logo i { display: block; margin-top: 6px; font: 600 12px var(--font-hud, system-ui); font-style: normal; letter-spacing: 0.5em; text-transform: uppercase; color: #8db4e2; }
+@keyframes ldpulse { 50% { text-shadow: 0 0 40px rgba(170, 215, 255, 0.9); } }
+#loading .ld-ring { width: 74px; height: 74px; }
+#loading .ld-ring svg { width: 100%; height: 100%; }
+#loading .ld-ring circle { fill: none; stroke-width: 3; stroke-linecap: round; transform-origin: 50px 50px; }
+#loading .r1 { stroke: #cfe6ff; stroke-dasharray: 80 190; animation: ldspin 1.6s linear infinite; }
+#loading .r2 { stroke: #8db4e2; stroke-dasharray: 50 140; animation: ldspin 1.1s linear infinite reverse; }
+#loading .r3 { stroke: #5d8cc4; stroke-dasharray: 30 82; animation: ldspin 0.8s linear infinite; }
+@keyframes ldspin { to { transform: rotate(360deg); } }
+#loading .ld-bar { width: 100%; height: 8px; background: rgba(150, 185, 230, 0.12); border: 1px solid rgba(150, 185, 230, 0.4); overflow: hidden; }
+#loading .ld-bar div { width: 0; height: 100%; background: linear-gradient(90deg, #3f6ea8, #cfe6ff); box-shadow: 0 0 12px rgba(160, 205, 255, 0.7); }
+#loading .ld-label { font: 600 12px var(--font-hud, system-ui); letter-spacing: 0.3em; text-transform: uppercase; color: #8db4e2; }
+#loading .ld-tip { position: absolute; left: 0; right: 0; bottom: 9vh; margin: 0; padding: 0 8vw; text-align: center; font: 15px system-ui; color: rgba(200, 222, 248, 0.75); opacity: 0; transition: opacity 0.35s; }
+#loading .ld-tip.in { opacity: 1; }

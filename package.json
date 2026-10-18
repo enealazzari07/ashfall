@@ -1,0 +1,65 @@
+{
+  "name": "ashfall",
+  "version": "0.3.8",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "electron": "electron .",
+    "play": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win dir --x64",
+    "installer": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "release": "npm run build && electron-builder --win nsis --x64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "nat-upnp": "^1.1.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "description": "Ashfall – 3D-Survival in einer zerfallenen Stadt",
+  "author": "Ashfall",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.ashfall.game",
+    "productName": "Ashfall",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "dist/**",
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/server.cjs",
+      "package.json"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "enealazzari07",
+      "repo": "ashfall"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": true,
+      "forceCodeSigning": false
+    }
+  }
+}

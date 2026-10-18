@@ -1,0 +1,18 @@
+#sleepdlg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; display: none; width: min(360px, 92vw); padding: 14px 16px 12px; user-select: none; }
+#sleepdlg.on { display: block; animation: ipop 0.14s ease-out; }
+#sleepdlg header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; margin-bottom: 10px; }
+#sleepdlg h3 { margin: 0; }
+#sleepdlg header small { color: var(--dim); font-size: 11px; }
+#sleepdlg .sd-bed { display: grid; grid-template-columns: 1fr 90px auto; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 12px; }
+#sleepdlg .sd-bar { height: 6px; background: rgba(150, 185, 230, 0.12); border: 1px solid rgba(150, 185, 230, 0.35); }
+#sleepdlg .sd-bar i { display: block; height: 100%; background: linear-gradient(90deg, #5d8cc4, #cfe6ff); }
+#sleepdlg small { color: var(--dim); font-size: 11px; }
+#sleepdlg .sd-spin { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 8px; }
+#sleepdlg .sd-spin b { min-width: 110px; text-align: center; font: 600 20px var(--font-hud, system-ui); letter-spacing: 0.06em; color: #dbe9fb; }
+#sleepdlg .sd-spin .btn { width: 38px; padding: 4px 0; font-size: 18px; }
+#sleepdlg input[type='range'] { width: 100%; accent-color: #8db4e2; margin: 4px 0 8px; }
+#sleepdlg .sd-info { margin: 0 0 12px; font-size: 12.5px; color: #cfd8e8; line-height: 1.5; }
+#sleepdlg .sd-info b { color: #fff; }
+#sleepdlg .sd-info .warn { color: var(--low); }
+#sleepdlg footer { display: flex; gap: 8px; }
+#sleepdlg footer .btn { flex: 1; padding: 8px 10px; }
