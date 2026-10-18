@@ -15,6 +15,30 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: '0.3.9',
+    date: '18.10.2026',
+    name: 'Charakterstufe, Werkbank und neue Möbel',
+    groups: [
+      {
+        title: 'Charakterstufe',
+        items: [
+          { kind: 'neu', text: 'Charakterstufe 1–20 im Person-Reiter: Erfahrung aus allen Fertigkeiten und aus dem Herstellen, mit XP-Balken und Hinweis auf das nächste Rezept.' },
+          { kind: 'neu', text: '19 neue Rezepte (Waffen, Werkzeug, Kleidung, Rucksäcke, Medizin), die nach Stufe freigeschaltet werden. Gesperrte Rezepte sind ausgegraut.' },
+          { kind: 'neu', text: 'Werkbank: Stufe-1-Rezepte gehen im Inventar, alles darüber nur an einer Werkbank in der Nähe.' },
+        ],
+      },
+      {
+        title: 'Welt',
+        items: [
+          { kind: 'neu', text: 'Auf Betten und Sofas in Gebäuden schlafen (E): die Zeit läuft dabei schneller.' },
+          { kind: 'besser', text: 'Im Haus fällt kein Regen, und nasse Kleidung trocknet dort schneller.' },
+          { kind: 'besser', text: 'Regale, Schränke und Kleiderschränke: geschlossene Varianten mit Türen, eine Tür steht offen; Kartons auf den Regalen.' },
+          { kind: 'besser', text: 'Ausrüstungsfelder links und rechts der Figur im Inventar sind breiter.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.3.8',
     date: '18.10.2026',
     name: 'Waffen, Nachladen und Kleidung im Mehrspieler',
