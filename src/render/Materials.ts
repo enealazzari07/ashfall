@@ -3,7 +3,7 @@ import { glassTexture, normalMapOf, signTexture, textures } from './Textures';
 import { farmTexture } from './FarmAssets';
 import { carMats } from './CarModel';
 import { applyXray } from './Xray';
-import { StreetTex, streetTextures } from './StreetTextures';
+import { StreetTex, groundMacro, streetTextures } from './StreetTextures';
 
 /** Windzeit für Gras und Blumen (Sekunden); wird beim Zeichnen der Büschel gesetzt */
 export const windTime = { value: 0 };
@@ -39,6 +39,56 @@ function worldUV<T extends THREE.Material>(m: T, tile: number): T {
     );
   };
   m.customProgramCacheKey = () => `wuv${tile}`;
+  return m;
+}
+
+/**
+ * Wiese ohne sichtbares Kachelraster: Textur in Weltkoordinaten in zwei Maßstäben (8 m und gedreht 13,7 m),
+ * gemischt über großflächiges Rauschen, dazu trockene, satte und erdige Stellen (~110 m) und Helligkeitswechsel (~37 m).
+ */
+function grassGround(m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+  const macro = { value: groundMacro() };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uMacro = macro;
+    sh.vertexShader = sh.vertexShader
+      .replace('void main() {', 'varying vec2 vGroundW;\nvoid main() {')
+      .replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>
+        {
+          vec4 wq = modelMatrix * vec4( position, 1.0 );
+          vGroundW = vec2( wq.x, -wq.z );
+          #ifdef USE_MAP
+          vMapUv = vGroundW / 8.0;
+          #endif
+          #ifdef USE_NORMALMAP
+          vNormalMapUv = vGroundW / 8.0;
+          #endif
+        }`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', 'uniform sampler2D uMacro;\nvarying vec2 vGroundW;\nvoid main() {')
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+        {
+          vec3 mc = texture2D( uMacro, vGroundW / 110.0 ).rgb;
+          float mid = texture2D( uMacro, mat2( 0.6, 0.8, -0.8, 0.6 ) * vGroundW / 37.0 + 0.5 ).g;
+          vec4 ga = texture2D( map, vGroundW / 8.0 );
+          vec4 gb = texture2D( map, mat2( 0.8, -0.6, 0.6, 0.8 ) * vGroundW / 13.7 + 0.37 );
+          vec4 sampledDiffuseColor = mix( ga, gb, smoothstep( 0.32, 0.68, mc.r ) );
+          // trocken (gelblich) bis satt (dunkelgrün), dazu erdige Stellen
+          vec3 dry = vec3( 1.22, 1.06, 0.66 ), lush = vec3( 0.7, 0.9, 0.72 );
+          sampledDiffuseColor.rgb *= mix( lush, dry, smoothstep( 0.2, 0.85, mc.g ) );
+          sampledDiffuseColor.rgb *= 0.86 + 0.26 * mid;
+          float dirt = smoothstep( 0.62, 0.84, mc.b ) * 0.6;
+          sampledDiffuseColor.rgb = mix( sampledDiffuseColor.rgb, sampledDiffuseColor.rgb * vec3( 1.1, 0.88, 0.7 ), dirt );
+          diffuseColor *= sampledDiffuseColor;
+        }
+        #endif`,
+      );
+  };
+  m.customProgramCacheKey = () => 'grassGround';
   return m;
 }
 
@@ -177,7 +227,7 @@ export function mats(): Mats {
     return normalMap ? { normalMap, normalScale: new THREE.Vector2(scale, scale) } : {};
   };
   cache = {
-    ground: std({ map: t.grass, roughness: 1, ...n(t.grass, 3, 0.8) }),
+    ground: grassGround(std({ map: t.grass, roughness: 1, ...n(t.grass, 3, 0.8) })),
     road: std({ map: t.asphalt, roughness: 0.92, ...n(t.asphalt, 2, 0.4) }),
     highway: std({ map: t.highway, roughness: 0.92, ...n(t.highway, 2, 0.4) }),
     ramp: std({ map: t.asphaltPlain, roughness: 0.92, ...n(t.asphaltPlain, 2, 0.4) }),

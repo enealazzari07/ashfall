@@ -13,7 +13,7 @@ function rand(seed: number): () => number {
 }
 
 /** Kachelbares Wertrauschen (n x n Pixel, Gitterweite `cell` Pixel), Werte 0..1 */
-function tileNoise(n: number, cell: number, r: () => number): Float32Array {
+export function tileNoise(n: number, cell: number, r: () => number): Float32Array {
   const L = Math.max(1, Math.round(n / cell));
   const lat = new Float32Array(L * L).map(() => r());
   const out = new Float32Array(n * n);
@@ -255,6 +255,32 @@ export interface StreetTex {
   manhole: THREE.CanvasTexture;
   /** weicher Kontaktschatten unter Autos (Alpha) */
   blob: THREE.CanvasTexture;
+}
+
+let macroT: THREE.DataTexture | null | undefined;
+/**
+ * Großflächiges Rauschen für den Boden (kachelbar, für ~110 m gedacht): R mischt zwei Grasmaßstäbe,
+ * G trocken/satt, B Erdstellen. Linear (keine Farbe).
+ */
+export function groundMacro(): THREE.DataTexture | null {
+  if (macroT !== undefined) return macroT;
+  if (typeof document === 'undefined') return (macroT = null);
+  const n = 256, r = rand(777);
+  const a = tileNoise(n, 32, r), b = tileNoise(n, 64, r), c = tileNoise(n, 16, r), d = tileNoise(n, 24, r);
+  const data = new Uint8Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    data[i * 4] = (a[i] * 0.7 + c[i] * 0.3) * 255;
+    data[i * 4 + 1] = (b[i] * 0.75 + c[i] * 0.25) * 255;
+    data[i * 4 + 2] = (d[i] * 0.6 + a[i] * 0.4) * 255;
+    data[i * 4 + 3] = 255;
+  }
+  macroT = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
+  macroT.wrapS = macroT.wrapT = THREE.RepeatWrapping;
+  macroT.magFilter = THREE.LinearFilter;
+  macroT.minFilter = THREE.LinearMipmapLinearFilter;
+  macroT.generateMipmaps = true;
+  macroT.needsUpdate = true;
+  return macroT;
 }
 
 let cache: StreetTex | null | undefined;
