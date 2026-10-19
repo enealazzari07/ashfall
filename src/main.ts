@@ -14,6 +14,7 @@ import { WEAPONS } from './data/weapons';
 import { LOOT_LISTS } from './data/loot';
 import { registerPz } from './pz';
 import './ui/theme.css';
+import './ui/modern.css';
 
 // PZ-Items, Waffen und Loot in die Tabellen mischen, bevor das Spiel startet
 registerPz({ items: ITEMS, weapons: WEAPONS, loot: LOOT_LISTS });

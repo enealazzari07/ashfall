@@ -39,6 +39,7 @@ import { ActionQueue } from '../sim/Actions';
 import { Skills } from '../sim/Skills';
 import { PlayerLevel } from '../sim/Level';
 import { Talents } from '../sim/Talents';
+import { TalentUI } from '../ui/TalentUI';
 import { pointsForLevel, talent } from '../data/talents';
 import { BATTERY_FLAT, BATTERY_FRESH, BATTERY_OK, CarParts, crashEngine, enginePower, fuelFraction, installBattery, lightDrain, newParts, refuel, removeBattery, repairEngine, runTick, tryStart } from '../sim/CarParts';
 import { CarAct, CarPanel, CarView } from '../ui/CarPanel';
@@ -225,6 +226,7 @@ export class Game {
   private sleepSpot: { x: number; z: number } | null = null;
   private ui: InventoryUI;
   private crafting: CraftingUI;
+  private talentUi!: TalentUI;
   private admin: AdminUI;
   private chat!: ChatUI;
   /** Laufende Mehrspieler-Sitzung (null = Einzelspieler) */
@@ -330,7 +332,7 @@ export class Game {
       skills: () => this.skills,
       level: () => this.level,
       talents: () => this.talents,
-      unlockTalent: (id) => this.unlockTalent(id),
+      openTalents: () => this.toggleTalents(true),
       nearBench: () => this.nearBench(),
       build: () => this.charBuild,
       xp: (id, amount) => this.gainXp(id, amount),
@@ -359,6 +361,7 @@ export class Game {
       specOf: (cx, cz) => this.world.specOf(cx, cz),
       markers: () => this.mapMarkers(),
     });
+    this.talentUi = new TalentUI({ talents: () => this.talents, level: () => this.level, unlock: (id) => this.unlockTalent(id) });
     this.crafting = new CraftingUI(this.inventory, this.talents, () => this.nearBench(), (r) => this.craft(r));
     this.chat = new ChatUI((t) => this.mp?.chat(t));
     this.admin = new AdminUI({
@@ -467,6 +470,17 @@ export class Game {
     this.crafting.refresh();
     this.dialog.refresh();
     this.factionsPanel.refresh();
+    this.talentUi.refresh();
+  }
+
+  private toggleTalents(force?: boolean): void {
+    if (force ?? !this.talentUi.isOpen) {
+      this.map.toggle(false);
+      this.ui.closeAll();
+      this.crafting.toggle(false);
+      this.setBuilding(false);
+    }
+    this.talentUi.toggle(force);
   }
 
   // --- Fraktionen ------------------------------------------------------------
@@ -710,6 +724,7 @@ export class Game {
       return;
     }
     if (this.input.consume('KeyI') || this.input.consume('Tab')) this.toggleInventory();
+    if (this.input.consume('KeyT')) this.toggleTalents();
     if (this.input.consume('KeyM')) this.map.toggle();
     if (this.input.consume('KeyL')) this.hud.togglePanel('log');
     if (this.input.consume('KeyH')) {
@@ -742,9 +757,10 @@ export class Game {
     }
     if (this.input.consume('Escape')) {
       const anything = this.map.isOpen || this.hud.panelOpen || this.ui.inventoryOpen || this.crafting.isOpen
-        || this.factionsPanel.isOpen || this.dialog.isOpen || this.building || this.sleepDlg.isOpen;
+        || this.factionsPanel.isOpen || this.dialog.isOpen || this.building || this.sleepDlg.isOpen || this.talentUi.isOpen;
       if (!anything) this.menu.show(true);
       this.map.toggle(false);
+      this.talentUi.toggle(false);
       this.sleepDlg.close();
       this.hud.closePanels();
       this.ui.closeAll();

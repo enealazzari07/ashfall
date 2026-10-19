@@ -1,0 +1,78 @@
+/* Talentbaum: großes Fenster im Stil des HUDs (dunkles Marineblau, Stahlblau-Linien, Sechsecke mit Leuchtrand) */
+#talents { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center; padding: 3vh 3vw; background: radial-gradient(ellipse at 50% 55%, rgba(24, 32, 46, 0.55), rgba(3, 5, 9, 0.92) 78%); backdrop-filter: blur(5px); }
+#talents.on { display: flex; }
+#talents .tw { position: relative; display: flex; flex-direction: column; width: min(1280px, 100%); height: 100%; max-height: 940px; padding: 18px 24px 14px; color: #dbe7f6; font-family: var(--font-hud, 'Bahnschrift', 'Segoe UI', sans-serif); letter-spacing: 0.04em; background: linear-gradient(160deg, rgba(16, 28, 48, 0.95), rgba(7, 13, 24, 0.97)); border: 1px solid rgba(150, 185, 230, 0.34); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 18px 60px rgba(0, 0, 0, 0.7); }
+#talents .tw::before { content: ''; position: absolute; inset: -3px; pointer-events: none; --c: #bcd8f6;
+  background:
+    linear-gradient(var(--c), var(--c)) left top / 14px 2px no-repeat, linear-gradient(var(--c), var(--c)) left top / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) right top / 14px 2px no-repeat, linear-gradient(var(--c), var(--c)) right top / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) left bottom / 14px 2px no-repeat, linear-gradient(var(--c), var(--c)) left bottom / 2px 14px no-repeat,
+    linear-gradient(var(--c), var(--c)) right bottom / 14px 2px no-repeat, linear-gradient(var(--c), var(--c)) right bottom / 2px 14px no-repeat; }
+#talents header { display: flex; align-items: center; gap: 24px; }
+#talents header > div:first-child { flex: 1; min-width: 0; text-align: center; padding-left: 190px; }
+#talents h2 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.32em; text-transform: uppercase; color: #f4f7fb; text-shadow: 0 0 18px rgba(150, 195, 255, 0.45); }
+#talents header p { margin: 5px 0 0; font-size: 12px; letter-spacing: 0.06em; color: #8398b4; }
+#talents .shards { display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 0 10px; min-width: 176px; padding: 8px 14px; background: rgba(120, 170, 230, 0.08); border: 1px solid rgba(150, 185, 230, 0.34); }
+#talents .shards span { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: #8398b4; }
+#talents .shards b { font-size: 26px; font-weight: 600; color: #cfe6ff; text-align: right; text-shadow: 0 0 12px rgba(160, 205, 255, 0.6); font-variant-numeric: tabular-nums; }
+#talents .shards small { grid-column: 1 / 3; font-size: 10.5px; color: #6f86a6; letter-spacing: 0.04em; }
+#talents .x { width: 34px; height: 34px; font-size: 15px; color: #cfe0f6; background: rgba(120, 170, 230, 0.08); border: 1px solid rgba(150, 185, 230, 0.34); cursor: pointer; font-family: inherit; }
+#talents .x:hover { background: rgba(120, 170, 230, 0.3); border-color: #cfe6ff; }
+#talents .tmap { flex: 1; min-height: 0; margin: 8px 0; }
+#talents .tmap svg { display: block; width: 100%; height: 100%; font-family: inherit; }
+#talents .bt { font-size: 20px; font-weight: 600; letter-spacing: 0.26em; }
+#talents .bs { font-size: 12.5px; fill: #7f94b2; letter-spacing: 0.05em; }
+
+/* Verbindungen */
+#talents .ln { stroke-width: 3; stroke-linecap: round; }
+#talents .ln.off { stroke: #1f2c40; }
+#talents .ln.open { stroke: #5f86b6; stroke-dasharray: 2 7; }
+#talents .ln.on { stroke: #bcd8f6; filter: drop-shadow(0 0 5px rgba(160, 205, 255, 0.8)); }
+
+/* Sechsecke */
+#talents .node { cursor: pointer; }
+#talents .hx { fill: #0b1522; stroke: #2c4060; stroke-width: 3; transition: stroke 0.15s, filter 0.15s; }
+#talents .hx2 { fill: #101c2e; stroke: rgba(160, 200, 255, 0.07); stroke-width: 1.5; }
+#talents .nm { font-size: 14px; font-weight: 600; fill: #90a6c4; letter-spacing: 0.05em; pointer-events: none; }
+#talents .pg { font-size: 30px; fill: #cfe0f6; pointer-events: none; }
+#talents .cost { fill: #08111d; stroke: #3c5578; stroke-width: 1.5; }
+#talents .ct { font-size: 13px; font-weight: 600; fill: #cfe0f6; pointer-events: none; }
+#talents .node image { pointer-events: none; }
+#talents .node.lock, #talents .node.poor { opacity: 0.5; }
+#talents .node.lock image, #talents .node.poor image { filter: grayscale(0.9) brightness(0.7); }
+#talents .node.can .hx { stroke: #cfe6ff; filter: drop-shadow(0 0 7px rgba(160, 205, 255, 0.85)); animation: tpulse 1.7s ease-in-out infinite; }
+#talents .node.can .hx2 { fill: #16273d; }
+#talents .node.can .ct { fill: #cfe6ff; }
+#talents .node.can .cost { stroke: #cfe6ff; }
+#talents .node.can .nm { fill: #e4f0ff; }
+#talents .node.have .hx { stroke: var(--bc, #9fc4ea); filter: drop-shadow(0 0 9px var(--bc, #9fc4ea)); }
+#talents .node.have .hx2 { fill: #18283f; stroke: rgba(200, 225, 255, 0.3); }
+#talents .node.have .nm { fill: #f4f7fb; }
+#talents .node.have .cost { fill: var(--bc, #9fc4ea); stroke: none; }
+#talents .node.have .ct { fill: #06101c; }
+#talents .node:hover .hx, #talents .node.sel .hx { stroke: #ffffff; }
+@keyframes tpulse { 50% { filter: drop-shadow(0 0 14px rgba(190, 225, 255, 1)); } }
+
+/* Beschreibung unten */
+#talents .tdetail { display: flex; align-items: center; gap: 22px; min-height: 74px; padding: 10px 16px; background: rgba(120, 170, 230, 0.06); border: 1px solid rgba(150, 185, 230, 0.28); }
+#talents .dn { min-width: 170px; }
+#talents .dn small { display: block; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--bc, #8398b4); }
+#talents .dn b { font-size: 20px; font-weight: 600; letter-spacing: 0.06em; color: #f4f7fb; }
+#talents .dd { flex: 1; min-width: 0; font-size: 13px; color: #b8c8dc; letter-spacing: 0.03em; }
+#talents .dd p { margin: 0; }
+#talents .dd .rq { margin-top: 3px; font-size: 11.5px; color: #7f94b2; }
+#talents .dd .rq .ok { color: #8fd18a; }
+#talents .dd .rq .no { color: #e8928a; }
+#talents .rcs { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 5px; }
+#talents .rc { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #a8e0b8; }
+#talents .rc img { width: 22px; height: 22px; object-fit: contain; }
+#talents .da { min-width: 190px; text-align: right; }
+#talents .da button { padding: 9px 16px; font: 600 12px var(--font-hud, system-ui); letter-spacing: 0.14em; text-transform: uppercase; color: #06101c; background: #bcd8f6; border: 0; cursor: pointer; box-shadow: 0 0 14px rgba(160, 205, 255, 0.45); }
+#talents .da button:hover { background: #e4f0ff; }
+#talents .da .got { color: #8fd18a; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; font-size: 12px; }
+#talents .da .why { font-size: 12px; color: #8398b4; }
+@media (max-width: 900px) {
+  #talents header > div:first-child { padding-left: 0; }
+  #talents header p { display: none; }
+  #talents .tdetail { flex-wrap: wrap; }
+}

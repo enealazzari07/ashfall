@@ -45,12 +45,12 @@ export interface BranchDef {
 }
 
 export const BRANCHES: BranchDef[] = [
-  { id: 'carpenter', name: 'Tischler', blurb: 'Möbel, Betten und Verteidigung bauen', color: '#c89a5a' },
-  { id: 'mechanic', name: 'Mechaniker', blurb: 'Werkzeug, Brecheisen und Autoreparatur', color: '#7fa3c9' },
-  { id: 'medic', name: 'Sanitäter', blurb: 'Wunden versorgen, Nähen und Desinfizieren', color: '#e07a7a' },
-  { id: 'tailor', name: 'Schneider', blurb: 'Kleidung und Rucksäcke nähen', color: '#b08ad0' },
-  { id: 'fighter', name: 'Kämpfer', blurb: 'Nahkampfwaffen selbst herstellen', color: '#d8a24a' },
-  { id: 'survivor', name: 'Überlebender', blurb: 'Allgemeine Vorteile', color: '#7fb08a' },
+  { id: 'carpenter', name: 'Tischler', blurb: 'Möbel, Betten und Verteidigung bauen', color: '#d8b07a' },
+  { id: 'mechanic', name: 'Mechaniker', blurb: 'Werkzeug, Brecheisen und Autoreparatur', color: '#7fb4e8' },
+  { id: 'medic', name: 'Sanitäter', blurb: 'Wunden versorgen, Nähen und Desinfizieren', color: '#e8909a' },
+  { id: 'tailor', name: 'Schneider', blurb: 'Kleidung und Rucksäcke nähen', color: '#b79ee8' },
+  { id: 'fighter', name: 'Kämpfer', blurb: 'Nahkampfwaffen selbst herstellen', color: '#e8b878' },
+  { id: 'survivor', name: 'Überlebender', blurb: 'Allgemeine Vorteile', color: '#7fd0a4' },
 ];
 
 export const TALENTS: TalentDef[] = [

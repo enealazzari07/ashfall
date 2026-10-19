@@ -15,6 +15,27 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: '0.4.2',
+    date: '19.10.2026',
+    name: 'Neues Inventar und Talentfenster',
+    groups: [
+      {
+        title: 'Inventar',
+        items: [
+          { kind: 'neu', text: 'Inventar im Stil eines modernen Raumfahrt-Menüs: Kopfleiste mit Navigation, Last, Münzen und Stufe, Gegenstände im Kachelraster, sechs Ausrüstungsfelder, Figur in der Mitte, Werte rechts und Tastenhinweise unten.' },
+          { kind: 'besser', text: 'Person-Bereich zeigt Stufe, Körpertemperatur, Werte, Fertigkeiten und Befinden auf einen Blick, ohne Scrollen. Von der Körpertemperatur bleibt nur der Gesamtwert.' },
+          { kind: 'besser', text: 'Einheitliche HUD-Schrift, flache Flächen und Umriss-Knöpfe im ganzen Inventar.' },
+        ],
+      },
+      {
+        title: 'Talentbaum',
+        items: [
+          { kind: 'neu', text: 'Der Talentbaum ist ein eigenes großes Fenster (Taste T oder Knopf in der Kopfleiste) mit Sechsecken und Verbindungen, passend zum HUD-Design.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.4.1',
     date: '19.10.2026',
     name: 'Talentbaum, Häuser und übersichtliches Inventar',

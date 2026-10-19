@@ -1,0 +1,275 @@
+/*
+ * Inventar im Stil eines modernen Raumfahrt-Menüs: flach, dunkel, ruhig. Keine Zierkästen, keine Eckwinkel, keine Rundungen
+ * (außer den Umriss-Knöpfen). Gegenstände liegen in einem Raster aus quadratischen Feldern; Abschnitte sind nur durch
+ * Überschriften und feine Linien getrennt. Wird nach allen anderen Stylesheets geladen und überschreibt deren Werte.
+ */
+:root {
+  --sf-bg: rgba(8, 12, 19, 0.8);
+  --sf-cell: rgba(255, 255, 255, 0.05);
+  --sf-cell-hi: rgba(255, 255, 255, 0.13);
+  --sf-line: rgba(255, 255, 255, 0.1);
+  --sf-text: #e9eef6;
+  --sf-dim: #8b97a9;
+  --sf-acc: #a8c8ff;
+}
+
+/* ---------- Fenster ---------- */
+#inv2 { gap: 28px; }
+#inv2 .iwin {
+  background: var(--sf-bg); border: 0; border-radius: 0; box-shadow: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  overflow: visible;
+}
+#inv2 .iwin .body { padding: 18px 16px 12px; }
+#inv2 .iwin header { justify-content: center; border: 0; margin-bottom: 10px; padding: 0; }
+#inv2 .iwin h3 { font-weight: 500; letter-spacing: 0.26em; font-size: 12.5px; color: var(--sf-text); }
+#inv2 .iwin .sub { position: absolute; right: 18px; top: 20px; font-size: 11px; color: var(--sf-dim); }
+#inv2 .iwin .body { position: relative; }
+#inv2 .iwin .wbar { height: 2px; border-radius: 0; background: var(--sf-line); margin: 0 0 12px; overflow: hidden; }
+#inv2 .iwin .wbar div { border-radius: 0; background: var(--sf-text); }
+#inv2 .iwin .wbar div.heavy { background: #f0b94a; }
+#inv2 .iwin .wbar div.full { background: #ee5a52; }
+#inv2 .iwin.pack .phead { background: none; border: 0; border-bottom: 1px solid var(--sf-line); border-radius: 0; padding: 4px 0; margin-bottom: 8px; color: var(--sf-text); }
+
+/* ---------- Reiter: Quadrate, aktiver weiß ---------- */
+#inv2 .iwin .tabs { padding: 14px 16px 0; gap: 4px; }
+.tabbtn, #inv2 .iwin .tabbtn { border-radius: 0; border: 0; background: var(--sf-cell); color: var(--sf-text); box-shadow: none; transition: background 0.12s; }
+#inv2 .iwin .tabbtn.lab { height: 34px; padding: 0 14px; }
+#inv2 .iwin .tabbtn:hover:not([disabled]):not(.on) { background: var(--sf-cell-hi); }
+#inv2 .iwin .tabbtn.on { background: #f2f5fa; color: #0a0f18; box-shadow: none; }
+
+/* ---------- Suche, Auswahl, Knöpfe ---------- */
+#inv2 .iwin .tools { gap: 6px; margin-bottom: 10px; }
+#inv2 .iwin .tools .find, #inv2 .iwin .tools select { background: var(--sf-cell); border: 0; border-bottom: 1px solid var(--sf-line); border-radius: 0; color: var(--sf-text); }
+#inv2 .iwin .btn, #inv2 .iwin .tbtn {
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; color: var(--sf-text);
+  padding: 8px 14px; font-weight: 500; letter-spacing: 0.16em; transition: background 0.12s, color 0.12s;
+}
+#inv2 .iwin .btn:hover:not([disabled]), #inv2 .iwin .tbtn:hover:not([disabled]) { background: #f2f5fa; color: #0a0f18; border-color: #f2f5fa; }
+#inv2 .iwin footer { margin-top: 12px; }
+
+/* ---------- Raster ---------- */
+#inv2 .iwin .list { background: none; border: 0; padding: 0 2px 0 0; }
+#inv2 .igrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+#inv2 .gi {
+  position: relative; aspect-ratio: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)); border-radius: 0; cursor: grab; overflow: hidden;
+}
+#inv2 .gi.empty { background: rgba(255, 255, 255, 0.025); cursor: default; }
+#inv2 .gi:not(.empty):hover { background: linear-gradient(160deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.08)); box-shadow: inset 2px 0 0 var(--sf-acc); }
+#inv2 .gi .gic { width: 62%; height: 62%; object-fit: contain; margin-bottom: 10px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); pointer-events: none; -webkit-user-drag: none; }
+#inv2 .gi .gq { position: absolute; top: 3px; right: 5px; font-size: 12px; font-weight: 600; color: var(--sf-text); font-variant-numeric: tabular-nums; pointer-events: none; }
+#inv2 .gi .gw { position: absolute; top: 3px; left: 5px; font-size: 9.5px; color: var(--sf-dim); font-variant-numeric: tabular-nums; pointer-events: none; }
+#inv2 .gi .gn { position: absolute; left: 4px; right: 4px; bottom: 3px; font-size: 10px; color: #c4cddb; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+#inv2 .iwin .list.over, #inv2 .iwin .list .gi.over { outline: 1px dashed rgba(255, 255, 255, 0.5); outline-offset: -3px; background: rgba(255, 255, 255, 0.04); }
+#inv2 .iwin .empty:not(.gi) { padding: 22px 8px; color: var(--sf-dim); text-align: center; }
+
+/* Listenzeilen (Herstellen, alte Spielstände): ebenfalls flach */
+#inv2 .iwin .row { border-radius: 0; background: var(--sf-cell); border: 0; box-shadow: none; margin-bottom: 2px; }
+#inv2 .iwin .row:hover { background: var(--sf-cell-hi); box-shadow: inset 2px 0 0 var(--sf-acc); }
+#inv2 .iwin .row.eq { background: rgba(168, 200, 255, 0.1); box-shadow: inset 2px 0 0 var(--sf-acc); }
+#inv2 .recipe, #inv2 .row2 { border-radius: 0; }
+#inv2 .recipe.no { opacity: 0.5; }
+#inv2 .recipe .lock, .recipe .lock { border-radius: 0; background: rgba(255, 255, 255, 0.12); color: var(--sf-text); }
+
+/* ---------- Ausrüstung und Schnellleiste: flache Felder ---------- */
+.cell, #hotbar .cell, #inv2 .eqgrid .cell { border-radius: 0; background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)); border: 0; box-shadow: none; }
+.cell.full, #inv2 .eqgrid .cell.full { background: linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06)); border: 0; }
+.cell.full:hover, #inv2 .eqgrid .cell.full:hover { background: linear-gradient(160deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1)); box-shadow: inset 2px 0 0 var(--sf-acc); border: 0; }
+.cell.over { background: rgba(255, 255, 255, 0.2) !important; box-shadow: inset 0 0 0 1px #fff; border: 0 !important; }
+#hotbar .cell { backdrop-filter: blur(8px); }
+#inv2 .eqgrid .eqslot small { color: var(--sf-text); font-weight: 500; letter-spacing: 0.2em; }
+#inv2 .eqgrid .cell { max-width: none; }
+
+/* ---------- Person: einfache Zeilen statt Karten ---------- */
+#inv2 .iwin .who { font-size: 15px; font-weight: 500; letter-spacing: 0.08em; }
+#inv2 .iwin .chip { border-radius: 0; background: var(--sf-cell); border: 0; }
+#inv2 .iwin .lvl { background: none; border: 0; border-radius: 0; padding: 8px 0 12px; margin: 4px 0 6px; border-bottom: 1px solid var(--sf-line); }
+#inv2 .iwin .lvl .ring .fg { stroke: #f2f5fa; filter: none; }
+#inv2 .iwin .lvl .ring b { color: #f2f5fa; }
+#inv2 .iwin .lvl-b .pts { border-radius: 999px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.35); color: var(--sf-text); }
+#inv2 .iwin .lvl-b .pts.has { background: #f2f5fa; color: #0a0f18; border-color: #f2f5fa; box-shadow: none; }
+#inv2 .iwin .tiles { display: block; margin: 0 0 6px; }
+#inv2 .iwin .tile { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; background: none; border-radius: 0; box-shadow: none; border: 0; border-bottom: 1px solid var(--sf-line); }
+#inv2 .iwin .tile small { grid-column: auto; flex: 1; font-size: 12px; letter-spacing: 0.1em; color: var(--sf-text); }
+#inv2 .iwin .tile b { order: 3; font-size: 15px; font-weight: 500; }
+#inv2 .iwin .tile i { order: 2; font-size: 11px; color: var(--sf-dim); }
+#inv2 .iwin .tile.warn b { color: #f0b94a; }
+#inv2 .iwin .tile.bad b { color: #ff8a7e; }
+#inv2 .iwin h4 { border-bottom: 1px solid var(--sf-line); font-weight: 500; letter-spacing: 0.22em; color: var(--sf-text); font-size: 11.5px; margin: 16px 0 8px; padding-bottom: 6px; }
+#inv2 .iwin h5 { color: var(--sf-dim); letter-spacing: 0.18em; }
+#inv2 .iwin .skgrid { grid-template-columns: repeat(2, 1fr); gap: 0 16px; }
+#inv2 .iwin .sk { background: none; border-radius: 0; padding: 6px 0 7px; border-bottom: 1px solid var(--sf-line); }
+#inv2 .iwin .sk .seg u { border-radius: 0; height: 3px; }
+#inv2 .iwin .sk .seg u.on { background: #f2f5fa; }
+#inv2 .iwin .sk.max .seg u.on, #inv2 .iwin .sk.max .skt b { background: var(--sf-acc); color: var(--sf-acc); }
+#inv2 .iwin .moods li, #inv2 .iwin .zones li { background: none; border-radius: 0; box-shadow: none; border: 0; border-bottom: 1px solid var(--sf-line); padding: 6px 0; }
+#inv2 .iwin .part, #inv2 .iwin .wcard { background: var(--sf-cell); border-radius: 0; }
+#inv2 .iwin .part.sel { background: var(--sf-cell-hi); border-radius: 0; border-color: #fff; }
+#inv2 .iwin .xpbar, #inv2 .iwin .tbar { border-radius: 0; background: var(--sf-line); }
+#inv2 .iwin .xpbar i, #inv2 .iwin .tbar i { border-radius: 0; }
+#inv2 .iwin .st { border-radius: 0; }
+
+/* ---------- Hinweise, Menüs, Tafeln ---------- */
+#itip, #imenu, .panel.craft, .panel, .hudpanel { border-radius: 0; border: 0; background: rgba(10, 15, 23, 0.94); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+#itip { padding: 0; }
+#itip > b { padding: 10px 12px 2px; background: rgba(255, 255, 255, 0.07); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; }
+#itip > small { display: block; padding: 0 12px 8px; background: rgba(255, 255, 255, 0.07); }
+#itip > p, #itip > .fx, #itip > .meta { margin-left: 12px; margin-right: 12px; }
+#itip .fx span { border-radius: 0; }
+#imenu { padding: 4px; }
+#imenu button { border-radius: 0; }
+#imenu button:hover { background: var(--sf-cell-hi); }
+.hudpanel::before, .hudpanel::after { display: none; }
+
+/* Hinweisleiste unten */
+.hintbar { position: fixed; left: 0; right: 0; bottom: 14px; z-index: 13; display: flex; justify-content: center; gap: 26px; pointer-events: none; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sf-dim); }
+.hintbar kbd { margin-right: 6px; padding: 2px 8px; border-radius: 999px; background: none; border: 1px solid rgba(255, 255, 255, 0.35); color: var(--sf-text); font: inherit; font-size: 10.5px; }
+#inv2:not(.on) .hintbar { display: none; }
+@media (max-width: 1100px) { .hintbar { display: none; } }
+
+/* ---------- Talentbaum: flach ---------- */
+#talents { backdrop-filter: blur(10px); }
+#talents .tw { border-radius: 0; background: var(--sf-bg); border: 0; box-shadow: none; backdrop-filter: blur(10px); }
+#talents .tw::before { display: none; }
+#talents .shards { border-radius: 0; background: none; border: 0; border-bottom: 1px solid var(--sf-line); }
+#talents .x { border-radius: 999px; background: none; border: 1px solid rgba(255, 255, 255, 0.35); }
+#talents .x:hover { background: #f2f5fa; color: #0a0f18; }
+#talents .tdetail { border-radius: 0; background: none; border: 0; border-top: 1px solid var(--sf-line); }
+#talents .da button { border-radius: 999px; background: #f2f5fa; box-shadow: none; padding: 10px 22px; font-weight: 500; }
+#talents .rc { border-radius: 0; background: none; padding: 0; }
+
+/* =====================================================================================================
+ * Layout 1:1 wie das Vorbild: Kopfleiste mit Navigation, links Kategorien und Listen, daneben die sechs
+ * Ausrüstungsplätze, in der Mitte die Figur, rechts die Werte, unten die Tastenhinweise.
+ * ===================================================================================================== */
+#inv2 { background: radial-gradient(ellipse at 50% 50%, rgba(20, 27, 40, 0.86), rgba(4, 6, 11, 0.96) 80%); backdrop-filter: blur(6px); }
+#inv2.on { display: flex; flex-direction: column; gap: 22px; padding: 26px 56px 70px; align-items: stretch; }
+
+/* Kopfleiste */
+#inv2 .topbar { display: flex; justify-content: space-between; align-items: center; flex: none; height: 44px; }
+#inv2 .topbar nav { display: flex; gap: 10px; align-items: center; }
+#inv2 .topbar .nav { padding: 6px 12px; font: 500 19px var(--font-hud, system-ui); letter-spacing: 0.1em; text-transform: uppercase; color: #dfe6f1; background: none; border: 0; border-radius: 0; cursor: pointer; }
+#inv2 .topbar .nav:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+#inv2 .topbar .nav.on { background: #f2f5fa; color: #0a0f18; }
+#inv2 .topbar .stats { display: flex; gap: 34px; align-items: center; font-size: 19px; letter-spacing: 0.06em; color: #e9eef6; }
+#inv2 .topbar .stats span { display: inline-flex; align-items: center; gap: 10px; position: relative; }
+#inv2 .topbar .stats b { font-weight: 400; }
+#inv2 .topbar .stats .gl { width: 22px; height: 22px; color: #e9eef6; }
+#inv2 .topbar .st-l u { position: absolute; left: 0; right: 0; bottom: -9px; height: 3px; background: rgba(255, 255, 255, 0.18); }
+#inv2 .topbar .st-l u::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--p, 0%); background: #f2f5fa; }
+
+/* Bühne */
+#inv2 .stage { flex: 1; min-height: 0; display: flex; gap: 40px; align-items: stretch; }
+#inv2 .leftblock { flex: none; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+#inv2 .cats { display: flex; align-items: center; gap: 3px; }
+#inv2 .catbtn { width: 50px; height: 50px; display: grid; place-items: center; color: #dfe6f1; background: rgba(255, 255, 255, 0.06); border: 0; border-radius: 0; cursor: pointer; }
+#inv2 .catbtn .gl { width: 26px; height: 26px; }
+#inv2 .catbtn:hover { background: rgba(255, 255, 255, 0.16); }
+#inv2 .catbtn.on { background: #f2f5fa; color: #0a0f18; }
+#inv2 .cat-name { margin-left: 14px; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #8b97a9; }
+#inv2 .lcols { flex: 1; min-height: 0; display: flex; gap: 26px; }
+
+/* Listen: ohne Hintergrund, Überschrift mittig */
+#inv2 .iwin { background: none !important; backdrop-filter: none; width: 262px; flex: none; }
+#inv2 .iwin.pack { width: 262px; }
+#inv2 .iwin .body { padding: 0; }
+#inv2 .iwin header { justify-content: center; margin: 0 0 10px; }
+#inv2 .iwin h3 { font: 500 14px var(--font-hud, system-ui); letter-spacing: 0.2em; }
+#inv2 .iwin .sub { right: 0; top: 2px; }
+#inv2 .iwin .tools { display: none; }
+#inv2 .iwin.me .tabs { display: none; }
+#inv2 .iwin.loot .tabs { order: -1; padding: 0 0 10px; gap: 2px; justify-content: center; }
+#inv2 .iwin.loot .tabbtn.lab { height: 28px; padding: 0 10px; font-size: 11px; }
+#inv2 .iwin.loot { flex-direction: column; }
+#inv2 .iwin .wbar { background: rgba(255, 255, 255, 0.12); }
+#inv2 .iwin.pack .phead { text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; }
+#inv2 .igrid { gap: 3px; }
+#inv2 .gi { background: rgba(255, 255, 255, 0.055); }
+#inv2 .gi.empty { background: rgba(255, 255, 255, 0.03); }
+#inv2 .gi .gic { width: 66%; height: 66%; margin-bottom: 12px; }
+#inv2 .gi .gn { font-size: 10.5px; bottom: 4px; }
+#inv2 .iwin footer { margin-top: 14px; justify-content: center; }
+#inv2 .iwin .btn { flex: none; min-width: 150px; }
+
+/* Ausrüstung: zwei Spalten, drei Reihen, große Felder mit Beschriftung darunter */
+#inv2 .eqpanel { flex: none; width: 252px; display: flex; flex-direction: column; gap: 18px; justify-content: flex-start; }
+#inv2 .eq2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 8px; }
+#inv2 .eq2 .eqslot { position: static; transform: none; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+#inv2 .eq2 .eqslot .cell { width: 100%; height: auto; aspect-ratio: 1; max-width: none; display: grid; place-items: center; }
+#inv2 .eq2 .eqslot .cell img.ic { width: 70%; height: 70%; }
+#inv2 .eq2 .eqslot .cell .ph { opacity: 0.18; }
+#inv2 .eq2 .eqslot .cell .ph .gl { width: 42px; height: 42px; }
+#inv2 .eq2 .eqslot small { text-align: center; font: 500 13px var(--font-hud, system-ui); letter-spacing: 0.14em; text-transform: uppercase; color: #e9eef6; }
+#inv2 .hotwrap { display: flex; justify-content: flex-start; padding: 0; }
+#inv2 .hotwrap #hotbar { position: static; transform: none; left: auto; bottom: auto; display: flex; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; }
+#inv2 .hotwrap #hotbar .cell { width: 44px; height: 44px; }
+
+/* Mitte: Figur */
+#inv2 .pvwrap { flex: 1 1 0; min-width: 0; position: relative; display: flex; }
+#inv2 .pvwrap .cpreview { flex: 1; min-width: 0; min-height: 0; }
+
+/* Rechts: Werte wie „Widerstände“ im Vorbild */
+#inv2 .iwin.me { width: 316px; }
+#inv2 .iwin.me header { justify-content: flex-start; padding: 0 0 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+#inv2 .iwin.me h3 { font-size: 20px; letter-spacing: 0.14em; font-weight: 400; }
+#inv2 .iwin .tile small .gl { width: 18px; height: 18px; margin-right: 10px; vertical-align: -4px; color: #cfd8e6; }
+#inv2 .iwin .tile b { font-size: 17px; font-weight: 400; }
+
+/* Tastenhinweise: Kreise mit Taste, danach die Funktion */
+.hintbar { bottom: 22px; gap: 46px; font-size: 14px; color: #dfe6f1; letter-spacing: 0.12em; }
+.hintbar span { display: inline-flex; align-items: center; gap: 12px; }
+.hintbar kbd { min-width: 30px; height: 30px; padding: 0 6px; margin: 0; display: inline-grid; place-items: center; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.55); font-size: 12px; background: none; color: #fff; }
+
+/* Hinweisfenster wie im Vorbild: helle Kopfzeile, darunter dunkle Fläche */
+#itip { width: 300px; }
+#itip > b { font-size: 15px; letter-spacing: 0.1em; padding: 10px 14px 0; background: rgba(255, 255, 255, 0.11); }
+#itip > small { padding: 0 14px 9px; background: rgba(255, 255, 255, 0.11); text-transform: uppercase; letter-spacing: 0.14em; font-size: 10.5px; }
+#itip > p { margin: 10px 14px 6px; font-size: 12.5px; }
+#itip > .fx { margin: 0 14px 8px; }
+#itip > .meta { margin: 0 14px; padding: 8px 0 10px; letter-spacing: 0.08em; }
+
+@media (max-width: 1480px) { #inv2 .pvwrap { display: none; } #inv2 .stage { gap: 26px; justify-content: space-between; } }
+@media (max-width: 1100px) { #inv2.on { padding: 14px 16px 16px; } #inv2 .topbar .stats { display: none; } #inv2 .eqpanel { display: none; } }
+
+/* ---- kompakter: keine Filterleiste, kleinere Ausrüstungsfelder, Person ohne Scrollen ---- */
+#inv2 .cats { display: none; }
+#inv2 .leftblock { padding-top: 6px; }
+#inv2 .eqpanel { width: 176px; gap: 14px; }
+#inv2 .eq2 { gap: 14px 6px; }
+#inv2 .eq2 .eqslot { gap: 5px; }
+#inv2 .eq2 .eqslot small { font-size: 11px; letter-spacing: 0.12em; }
+#inv2 .eq2 .eqslot .cell .ph .gl { width: 30px; height: 30px; }
+#inv2 .hotwrap #hotbar .cell { width: 34px; height: 34px; }
+#inv2 .hotwrap #hotbar .cell img.ic { width: 26px; height: 26px; }
+
+#inv2 .iwin.me { width: 340px; }
+#inv2 .iwin.me header { margin-bottom: 6px; padding-bottom: 6px; }
+#inv2 .iwin.me h3 { font-size: 17px; }
+#inv2 .iwin.me .list.char { padding: 0 4px 0 0; overflow-y: auto; }
+#inv2 .iwin.me .who { margin: 0 0 3px; font-size: 14px; }
+#inv2 .iwin.me .chips { margin-bottom: 2px; }
+#inv2 .iwin.me .chip { padding: 1px 8px; font-size: 10.5px; }
+#inv2 .iwin.me .lvl { padding: 4px 0 8px; margin: 2px 0 2px; gap: 12px; }
+#inv2 .iwin.me .lvl .ring { width: 48px; height: 48px; }
+#inv2 .iwin.me .lvl .ring b { font-size: 17px; }
+#inv2 .iwin.me .lvl .ring small { font-size: 7.5px; }
+#inv2 .iwin.me .lvl-b { gap: 4px; }
+#inv2 .iwin.me .lvl-b .lx { font-size: 10.5px; }
+#inv2 .iwin.me .lvl-b .pts { padding: 4px 10px; font-size: 10px; }
+#inv2 .iwin.me .tiles { margin: 0 0 2px; }
+#inv2 .iwin.me .tile { padding: 4px 0; }
+#inv2 .iwin.me .tile small { font-size: 11px; }
+#inv2 .iwin.me .tile small .gl { width: 15px; height: 15px; margin-right: 8px; vertical-align: -3px; }
+#inv2 .iwin.me .tile b { font-size: 14px; }
+#inv2 .iwin.me h4 { margin: 8px 0 4px; padding-bottom: 3px; font-size: 10.5px; }
+#inv2 .iwin.me h5 { margin: 4px 0 1px; font-size: 9px; }
+#inv2 .iwin.me .skgrid { gap: 0 14px; margin-bottom: 0; }
+#inv2 .iwin.me .sk { padding: 2px 0 4px; }
+#inv2 .iwin.me .sk .skt { font-size: 11px; }
+#inv2 .iwin.me .sk .skt b { font-size: 12px; }
+#inv2 .iwin.me .sk .seg { margin-top: 3px; }
+#inv2 .iwin.me .moods { gap: 0; }
+#inv2 .iwin.me .moods li { padding: 3px 0; font-size: 11.5px; }
+#inv2 .iwin.me ul.zones.feel { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+#inv2 .iwin.me ul.zones.feel li { grid-template-columns: 1fr 40px auto; padding: 3px 0; font-size: 11px; gap: 6px; }
+#inv2 .iwin.me ul.zones.feel li .tbar { display: block; }

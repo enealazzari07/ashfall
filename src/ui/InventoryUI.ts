@@ -1,6 +1,6 @@
 import './inventory.css';
 import { EQUIP_SLOTS, HOTBAR_SIZE, Inventory, Where } from '../player/Inventory';
-import { CATEGORY_NAME, CATEGORY_ORDER, Category, EquipSlot, Stack, item } from '../data/items';
+import { CATEGORY_NAME, CATEGORY_ORDER, Category, EquipSlot, Stack, item, COIN } from '../data/items';
 import { ActiveMoodle, levelById, moodleTone } from '../data/moodles';
 import { ZONES, ZONE_NAME, type Thermo } from '../sim/Thermo';
 import type { Mood } from '../sim/Mood';
@@ -16,7 +16,7 @@ import { profession } from '../data/professions';
 import type { Skills } from '../sim/Skills';
 import { LEVEL_MAX, PlayerLevel } from '../sim/Level';
 import type { Talents } from '../sim/Talents';
-import { BRANCHES, TALENTS, TalentDef, pointsForLevel } from '../data/talents';
+import { pointsForLevel } from '../data/talents';
 import type { Build } from '../sim/Profile';
 import type { Container } from '../world/ChunkManager';
 import type { ToastKind } from './HUD';
@@ -38,8 +38,8 @@ export interface InventoryHooks {
   skills(): Skills;
   level(): PlayerLevel;
   talents(): Talents;
-  /** Talent freischalten (kostet Talentpunkte) */
-  unlockTalent(id: string): void;
+  /** Talentbaum-Fenster öffnen */
+  openTalents(): void;
   /** Steht eine Werkbank in Reichweite? */
   nearBench(): boolean;
   build(): Build;
@@ -67,7 +67,7 @@ type PKind = 'main' | 'bag' | 'side';
 const isP = (k: string | undefined): k is PKind => k === 'main' || k === 'bag' || k === 'side';
 const WHERE_NAME: Record<PKind, string> = { main: 'Taschen', bag: 'Rucksack', side: 'Seitentaschen' };
 type SortBy = 'type' | 'name' | 'weight';
-type PlayerTab = 'char' | 'skills' | 'talents' | 'body' | 'health';
+type PlayerTab = 'char' | 'health';
 type LootTab = 'box' | 'ground' | 'build';
 
 interface Src {
@@ -154,9 +154,10 @@ export class InventoryUI {
   private ltab: LootTab = 'box';
   /** Mittlere Spalte: Ausrüstungsplätze links und rechts der Figur, darunter die Schnellleiste */
   private fig = document.createElement('div');
-  private eqTop = document.createElement('div');
-  private eqLeft = document.createElement('div');
-  private eqRight = document.createElement('div');
+  private eqGrid = document.createElement('div');
+  /** Kopfleiste (Navigation, Last, Münzen, Stufe) und Kategorie-Symbole */
+  private top = document.createElement('div');
+  private cats = document.createElement('div');
   private hotWrap = document.createElement('div');
   private st = { me: newState(), loot: newState(), pack: newState() };
   private drag: Drag | null = null;
@@ -167,16 +168,30 @@ export class InventoryUI {
     this.loot = this.makeWin('loot');
     this.pack = this.makePack();
     this.me = this.makeWin('me');
-    this.fig.className = 'figure';
-    this.eqTop.className = 'eqgrid eqrow';
-    this.eqLeft.className = 'eqgrid eqcol';
-    this.eqRight.className = 'eqgrid eqcol';
+    this.fig.className = 'eqpanel';
+    this.eqGrid.className = 'eq2';
     this.hotWrap.className = 'hotwrap';
-    const figRow = document.createElement('div');
-    figRow.className = 'figrow';
-    figRow.append(this.eqLeft, this.prev.el, this.eqRight);
-    this.fig.append(this.eqTop, figRow, this.hotWrap);
-    this.root.append(this.loot.root, this.pack.root, this.fig, this.me.root);
+    this.fig.append(this.eqGrid, this.hotWrap);
+    this.top.className = 'topbar';
+    this.cats.className = 'cats';
+    const left = document.createElement('div');
+    left.className = 'leftblock';
+    const cols = document.createElement('div');
+    cols.className = 'lcols';
+    cols.append(this.pack.root, this.loot.root);
+    left.append(cols);
+    const center = document.createElement('div');
+    center.className = 'pvwrap';
+    center.append(this.prev.el);
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    stage.append(left, this.fig, center, this.me.root);
+    const hints = document.createElement('div');
+    hints.className = 'hintbar';
+    hints.innerHTML = [
+      ['2×', 'Benutzen / Aufnehmen'], ['⇧', 'Verschieben'], ['↔', 'Ziehen: Ablegen oder Umpacken'], ['R', 'Rechtsklick: Menü'], ['Esc', 'Schließen'],
+    ].map(([k, t]) => `<span><kbd>${k}</kbd>${t}</span>`).join('');
+    this.root.append(this.top, stage, hints);
     this.hotEl.id = 'hotbar';
     this.tip.id = 'itip';
     this.tip.className = 'panel';
@@ -250,6 +265,7 @@ export class InventoryUI {
     this.renderHotbar();
     if (!this.open) return;
     this.prev.setOutfit(this.inv.equipment);
+    this.renderTop();
     this.renderEquip();
     this.renderMe();
     this.renderPack();
@@ -346,9 +362,22 @@ export class InventoryUI {
       else this.ltab = v as LootTab;
       return this.refresh();
     }
-    const tn = t.closest<HTMLElement>('[data-talent]');
-    if (tn) {
-      this.h.unlockTalent(tn.dataset.talent!);
+    if (t.closest('[data-open-talents]')) return this.h.openTalents();
+    const nv = t.closest<HTMLElement>('[data-nav]');
+    if (nv) {
+      const id = nv.dataset.nav;
+      if (id === 'talents') return this.h.openTalents();
+      if (id === 'build') this.ltab = 'build';
+      else {
+        if (this.ltab === 'build') this.ltab = this.container && this.container.kind !== -1 ? 'box' : 'ground';
+        this.tab = id === 'health' ? 'health' : 'char';
+      }
+      if (id === 'build') this.tab = 'char';
+      return this.refresh();
+    }
+    const ct = t.closest<HTMLElement>('[data-cat]');
+    if (ct) {
+      this.st.me.cat = this.st.pack.cat = this.st.loot.cat = ct.dataset.cat as typeof this.st.pack.cat;
       return this.refresh();
     }
     const rc = t.closest<HTMLElement>('[data-recipe]');
@@ -426,17 +455,11 @@ export class InventoryUI {
       return CATEGORY_ORDER.indexOf(da.category) - CATEGORY_ORDER.indexOf(db.category) || da.name.localeCompare(db.name);
     });
     if (!groups.length) return `<div class="empty">${list.length ? 'Nichts gefunden' : 'Leer'}</div>`;
-    return groups
-      .map((g) => {
-        if (g.is.length === 1) return row(kind, g.is[0], list[g.is[0]], false);
-        const gid = `${kind}:${g.id}`;
-        const open = st.open.has(gid);
-        const d = item(g.id);
-        const head = `<div class="row g c-${d.category}" data-gid="${gid}" data-src="${kind}" data-i="-1" data-group="${g.id}" data-item="${g.id}" data-qty="${g.qty}">
-          <span class="chev ${open ? 'open' : ''}">${glyph('chev')}</span>${iconHtml(g.id)}<span class="nm">${d.name}</span><span class="q">×${g.qty}</span><span class="w">${fmt(g.w)}</span></div>`;
-        return head + (open ? g.is.map((i) => row(kind, i, list[i], true)).join('') : '');
-      })
-      .join('');
+    // Raster: ein Feld je Stapel, danach leere Felder bis zur Reihe und eine Reihe darüber hinaus
+    const tiles = groups.flatMap((g) => g.is.map((i) => tile(kind, i, list[i])));
+    const COLS = 4;
+    const fill = (COLS - (tiles.length % COLS)) % COLS + COLS;
+    return `<div class="igrid">${tiles.join('')}${'<div class="gi empty"></div>'.repeat(fill)}</div>`;
   }
 
   private setBar(w: WinEls, ratio: number): void {
@@ -452,10 +475,7 @@ export class InventoryUI {
     const scroll = w.list.scrollTop;
 
     w.tabs.innerHTML = [
-      tabBtn('char', 'person', 'Person: Stufe, Beruf und Zustände', this.tab === 'char', false, 'Person'),
-      tabBtn('skills', 'book', 'Fertigkeiten', this.tab === 'skills', false, 'Skills'),
-      tabBtn('talents', 'star', `Talentbaum${this.freePoints() ? ` (${this.freePoints()} Punkte frei)` : ''}`, this.tab === 'talents', false, 'Talente'),
-      tabBtn('body', 'temp', 'Körpertemperatur und Befinden', this.tab === 'body', false, 'Körper'),
+      tabBtn('char', 'person', 'Person: Stufe, Fertigkeiten und Zustände', this.tab === 'char', false, 'Person'),
       tabBtn('health', 'health', 'Gesundheit', this.tab === 'health', false, 'Gesund'),
     ].join('');
 
@@ -479,25 +499,7 @@ export class InventoryUI {
       return;
     }
 
-    // Person: Stufe, Beruf, Zustände. Fertigkeiten, Talente und Körper haben eigene Reiter; die Kleidung liegt links und rechts der Figur.
-    const pages: Partial<Record<PlayerTab, [string, () => string]>> = {
-      skills: ['Fertigkeiten', () => this.skillsHtml()],
-      talents: ['Talentbaum', () => this.talentsHtml()],
-      body: ['Körper', () => `<h4>Körpertemperatur</h4><ul class="zones">${this.zonesHtml()}</ul><h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`],
-    };
-    const sub = pages[this.tab];
-    if (sub) {
-      w.title.textContent = sub[0];
-      w.sub.textContent = this.tab === 'talents' ? `${this.freePoints()} Punkte frei` : '';
-      w.sub.className = 'sub';
-      w.bar.style.display = 'none';
-      w.tools.style.display = w.foot.style.display = 'none';
-      w.list.classList.add('char');
-      w.list.classList.remove('bodyv');
-      w.list.innerHTML = sub[1]();
-      w.list.scrollTop = scroll;
-      return;
-    }
+    // Person: Beruf, Stufe, Werte, Fertigkeiten und Zustände. Die Kleidung liegt links und rechts der Figur.
     w.title.textContent = 'Person';
     w.sub.textContent = '';
     w.bar.style.display = 'none';
@@ -517,9 +519,33 @@ export class InventoryUI {
       const [label, ph] = EQ_LABEL[es];
       return `<div class="eqslot s-${es}">${cell('eq', es, id ? { id, qty: 1 } : null, `data-drop="eq" data-es="${es}"`, ph)}<small>${label}</small></div>`;
     };
-    this.eqTop.innerHTML = slot('head');
-    this.eqLeft.innerHTML = ['body', 'legs', 'feet'].map((e) => slot(e as (typeof EQUIP_SLOTS)[number])).join('');
-    this.eqRight.innerHTML = ['back', 'hand'].map((e) => slot(e as (typeof EQUIP_SLOTS)[number])).join('');
+    // zwei Spalten, drei Reihen: Kopf und Hand, Körper und Rücken, Beine und Füße
+    this.eqGrid.innerHTML = ['head', 'hand', 'body', 'back', 'legs', 'feet'].map((e) => slot(e as (typeof EQUIP_SLOTS)[number])).join('');
+  }
+
+  /** Kopfleiste: Navigation links, Last, Münzen und Stufe rechts */
+  private renderTop(): void {
+    const lv = this.h.level();
+    const mode = this.tab === 'health' ? 'health' : this.ltab === 'build' ? 'build' : 'inv';
+    const nav = (id: string, label: string, on: boolean): string => `<button class="nav${on ? ' on' : ''}" data-nav="${id}">${label}</button>`;
+    const pct = Math.round(lv.progress * 100);
+    this.top.innerHTML = `<nav>${nav('inv', 'Inventar', mode === 'inv')}${nav('build', 'Herstellen', mode === 'build')}${nav('talents', 'Talente', false)}${nav('health', 'Gesundheit', mode === 'health')}</nav>
+      <div class="stats">
+        <span class="st-w" title="Last">${glyph('weight')}<b>${this.inv.weight.toFixed(0)}</b>/${this.inv.maxWeight}</span>
+        <span class="st-c" title="Münzen">${glyph('coin')}<b>${this.inv.count(COIN)}</b></span>
+        <span class="st-l" title="${lv.toNext} XP bis zur nächsten Stufe"><i>${glyph('star')}</i><b>Stufe ${lv.level}</b><u style="--p:${pct}%"></u></span>
+      </div>`;
+  }
+
+  /** Kategorie-Symbole über den Listen: filtern Rucksack, Lager und Person gemeinsam */
+  private renderCats(): void {
+    const cur = this.st.pack.cat;
+    const icons: [string, string, string][] = [
+      ['all', 'box', 'Alles'], ['gear', 'hand', CATEGORY_NAME.gear], ['drink', 'thirst', CATEGORY_NAME.drink], ['food', 'hunger', CATEGORY_NAME.food],
+      ['medical', 'health', CATEGORY_NAME.medical], ['material', 'wall', CATEGORY_NAME.material], ['build', 'table', CATEGORY_NAME.build], ['misc', 'coin', CATEGORY_NAME.misc],
+    ];
+    this.cats.innerHTML = icons.map(([c, g, t]) => `<button class="catbtn${cur === c ? ' on' : ''}" data-cat="${c}" title="${t}">${glyph(g)}</button>`).join('')
+      + `<span class="cat-name">${cur === 'all' ? 'Alles' : CATEGORY_NAME[cur as Category]}</span>`;
   }
 
   /** Mittleres Fenster: Rucksack (Hauptfach) und Seitentaschen als zwei Fächer */
@@ -574,63 +600,39 @@ export class InventoryUI {
       ? moods.map((m) => `<li class="${moodleTone(m.level)}">${glyph(m.glyph)}<span>${m.label}</span><i>${'●'.repeat(m.level)}${'○'.repeat(4 - m.level)}</i></li>`).join('')
       : '<li class="ok"><span>Dir geht es gut.</span></li>';
     const load = Math.round((inv.weight / inv.maxWeight) * 100);
+    const th = this.h.thermo();
+    const cold = th.cold;
+    const tempLabel = cold < 0.12 ? 'Angenehm' : cold < 0.4 ? 'Kühl' : cold < 0.7 ? 'Kalt' : 'Eisig';
+    const tempTone = cold < 0.12 ? '' : cold < 0.4 ? 'warn' : 'bad';
     return `${doll ? this.dollHtml() : ''}
       ${this.buildHtml()}
       ${this.levelHtml()}
-      <dl class="stats grid">
-        <div><dt>Kälteschutz</dt><dd>${warmth} %</dd></div>
-        <div><dt>Tempo</dt><dd class="${speed < 100 ? 'warn' : ''}">${speed} %</dd></div>
-        <div><dt>Last</dt><dd class="${load >= 100 ? 'warn' : ''}">${load} %</dd></div>
-        <div><dt>Licht</dt><dd>${inv.hasLight ? 'Lampe' : '–'}</dd></div>
-      </dl>
-      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>`;
+      <div class="tiles">
+        <div class="tile ${tempTone}"><small>Körpertemperatur</small><b>${th.meanSkin.toFixed(1)}°</b><i>${tempLabel}</i></div>
+        <div class="tile"><small>Kälteschutz</small><b>${warmth} %</b><i>${inv.hasLight ? 'mit Lampe' : 'Kleidung'}</i></div>
+        <div class="tile ${speed < 100 ? 'warn' : ''}"><small>Tempo</small><b>${speed} %</b><i>${speed < 100 ? 'gebremst' : 'normal'}</i></div>
+        <div class="tile ${load >= 100 ? 'warn' : ''}"><small>Last</small><b>${load} %</b><i>${inv.weight.toFixed(1)} kg</i></div>
+      </div>
+      <h4>Fertigkeiten</h4>${this.skillsHtml()}
+      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>
+      <h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`;
   }
 
   private freePoints(): number {
     return this.h.talents().free(this.h.level().level);
   }
 
-  /** Stufe, Erfahrungsbalken und freie Talentpunkte */
+  /** Stufe als Ring mit Erfahrung, daneben die Talentpunkte und der Knopf zum Talentbaum */
   private levelHtml(): string {
     const lv = this.h.level();
     const l = lv.level;
     const pts = this.freePoints();
     const info = l >= LEVEL_MAX ? 'Höchste Stufe erreicht' : `${lv.toNext} XP bis Stufe ${l + 1}`;
-    const next = l >= LEVEL_MAX ? '' : pointsForLevel(l + 1) - pointsForLevel(l);
-    return `<div class="lvl"><div class="lvl-n"><small>Stufe</small><b>${l}</b></div>
-      <div class="lvl-b"><div class="xpbar"><i style="width:${Math.round(lv.progress * 100)}%"></i></div>
-      <span>${info}${next ? ` · +${next} Punkt${next === 1 ? '' : 'e'}` : ''}</span>
-      <button class="pts${pts ? ' has' : ''}" data-tab="talents" title="Zum Talentbaum">${pts ? `${pts} Talentpunkt${pts === 1 ? '' : 'e'} frei` : 'Keine Talentpunkte frei'}</button></div></div>`;
-  }
-
-  /** Talentbaum: je Beruf ein Zweig, Talente als Kacheln in Spalten und Reihen */
-  private talentsHtml(): string {
-    const t = this.h.talents();
-    const level = this.h.level().level;
-    const pts = t.free(level);
-    const head = `<p class="tl-intro">Jede Stufe gibt Talentpunkte (alle 5 Stufen 2 Bonuspunkte). Talente schalten Rezepte und Vorteile frei. Ein Talent braucht seine Vorgänger.</p>
-      <div class="tl-pts"><b>${pts}</b> frei · ${t.spent} ausgegeben · ${pointsForLevel(level)} gesamt</div>`;
-    const branches = BRANCHES.map((br) => {
-      const list = TALENTS.filter((x) => x.branch === br.id);
-      const got = list.filter((x) => t.has(x.id)).length;
-      const cells = list.map((x) => this.talentCell(x, t, level)).join('');
-      return `<section class="branch" style="--bc:${br.color}">
-        <header><b>${br.name}</b><span>${got}/${list.length}</span></header>
-        <p class="blurb">${br.blurb}</p>
-        <div class="tgrid">${cells}</div></section>`;
-    }).join('');
-    return head + branches;
-  }
-
-  private talentCell(x: TalentDef, t: Talents, level: number): string {
-    const have = t.has(x.id);
-    const can = t.canUnlock(x, level);
-    const state = have ? 'have' : can.ok ? 'can' : t.missing(x).length ? 'lock' : 'poor';
-    const names = (x.recipes ?? []).map((id) => item(RECIPES.find((r) => r.id === id)?.output.id ?? id).name);
-    const why = have ? 'Freigeschaltet' : can.ok ? 'Klicken zum Freischalten' : can.reason;
-    return `<button class="tnode ${state}" style="grid-column:${x.col + 1};grid-row:${x.row + 1}" ${state === 'can' ? `data-talent="${x.id}"` : ''} title="${why}">
-      <span class="tn">${x.name}</span><span class="tc">${have ? '✓' : `${x.cost} P`}</span>
-      <span class="td">${x.desc}</span>${names.length ? `<span class="tr">${names.join(', ')}</span>` : ''}</button>`;
+    const next = l >= LEVEL_MAX ? 0 : pointsForLevel(l + 1) - pointsForLevel(l);
+    const C = 2 * Math.PI * 26;
+    return `<div class="lvl"><div class="ring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" class="bg"/><circle cx="32" cy="32" r="26" class="fg" stroke-dasharray="${(C * lv.progress).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/></svg><div><small>Stufe</small><b>${l}</b></div></div>
+      <div class="lvl-b"><span class="lx">${info}${next ? ` · nächste Stufe +${next} Punkt${next === 1 ? '' : 'e'}` : ''}</span>
+      <button class="pts${pts ? ' has' : ''}" data-open-talents title="Talentbaum (T)"><span>Talentbaum</span><em>${pts ? `${pts} Punkt${pts === 1 ? '' : 'e'} frei` : 'keine Punkte frei'}</em></button></div></div>`;
   }
 
   private buildHtml(): string {
@@ -642,16 +644,17 @@ export class InventoryUI {
     return `<p class="who"><b>${b.name}</b> · ${profession(b.profession).name}</p><div class="chips">${chips || '<span class="chip">Keine besonderen Eigenschaften</span>'}</div>`;
   }
 
+  /** Fertigkeiten als Kacheln: Stufe groß, zehn Segmente, das nächste füllt sich mit der Erfahrung */
   private skillsHtml(): string {
     const sk = this.h.skills();
-    const groups = [...new Set(SKILLS.map((s) => s.group))];
+    const groups = [...new Set(SKILLS.map((x) => x.group))];
     return groups.map((g) => {
-      const rows = SKILLS.filter((s) => s.group === g).map((s) => {
-        const lvl = sk.level(s.id);
-        const pips = Array.from({ length: MAX_LEVEL }, (_, i) => `<u class="${i < lvl ? 'on' : ''}"></u>`).join('');
-        return `<li title="${s.perk}"><span>${s.name}</span><div class="pips">${pips}</div><div class="xpbar"><i style="width:${Math.round(sk.progress(s.id) * 100)}%"></i></div><b>${lvl}</b></li>`;
+      const cards = SKILLS.filter((x) => x.group === g).map((x) => {
+        const lvl = sk.level(x.id);
+        const seg = Array.from({ length: MAX_LEVEL }, (_, i) => `<u class="${i < lvl ? 'on' : i === lvl ? 'cur' : ''}"${i === lvl ? ` style="--f:${Math.round(sk.progress(x.id) * 100)}%"` : ''}></u>`).join('');
+        return `<div class="sk${lvl >= MAX_LEVEL ? ' max' : ''}" title="${x.perk}"><div class="skt"><span>${x.name}</span><b>${lvl}</b></div><div class="seg">${seg}</div></div>`;
       }).join('');
-      return `<h5>${g}</h5><ul class="skills">${rows}</ul>`;
+      return `<h5>${g}</h5><div class="skgrid">${cards}</div>`;
     }).join('');
   }
 
@@ -1046,7 +1049,7 @@ export class InventoryUI {
   // --- Drag & Drop ------------------------------------------------------------------
 
   private srcOf(t: EventTarget | null): { src: Src; el: HTMLElement } | null {
-    const el = (t as HTMLElement | null)?.closest?.<HTMLElement>('.row[data-src], .cell.full[data-src]');
+    const el = (t as HTMLElement | null)?.closest?.<HTMLElement>('.row[data-src], .gi[data-src], .cell.full[data-src]');
     if (!el) return null;
     const kind = el.dataset.src as Kind;
     const key = el.dataset.key ?? el.dataset.i ?? '0';
@@ -1304,6 +1307,13 @@ function syncTools(w: WinEls, st: ListState): void {
   if (document.activeElement !== text && text.value !== st.text) text.value = st.text;
   if (cat.value !== st.cat) cat.value = st.cat;
   if (sort.value !== st.sort) sort.value = st.sort;
+}
+
+/** Feld im Raster: Symbol, Menge oben rechts, Name unten */
+function tile(kind: PKind | 'box' | 'ground', i: number, s: Stack): string {
+  const d = item(s.id);
+  return `<div class="gi c-${d.category}" data-src="${kind}" data-i="${i}" data-item="${s.id}" data-qty="${s.qty}">
+    ${iconHtml(s.id, 'gic')}${s.qty > 1 ? `<span class="gq">${s.qty}</span>` : ''}<span class="gw">${fmt(d.weight * s.qty)}</span><span class="gn">${d.name}</span></div>`;
 }
 
 function row(kind: PKind | 'box' | 'ground', i: number, s: Stack, sub: boolean): string {
