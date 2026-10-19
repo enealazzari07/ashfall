@@ -5,12 +5,12 @@ import {
   Box, CHUNK, Car, ChunkSpec, HIGHWAY_WIDTH, ROAD, SIDEWALK, Wagon, chunkSeed, landOf, rng,
 } from './CityGenerator';
 import { Inst, instanced, makeBox, mat4, planeXZ } from '../render/geo';
-import { mats, windTime } from '../render/Materials';
+import { DecalName, mats, windTime } from '../render/Materials';
 import { URBAN, urbanClone } from '../render/UrbanAssets';
 import { bushGeometry } from '../render/Trees';
 import { buildTrees } from '../render/TreeMesh';
-import { edgePoints, stripGeo } from '../render/RoadRibbon';
-import { edgeRoad, poseAt } from './WorldMap';
+import { edgePoints, lanePose, stripGeo } from '../render/RoadRibbon';
+import { edgeRoad, poseAt, stationsNear } from './WorldMap';
 import { Livery, carGeos, carMats, decalGeo, modelOf, shadowGeo, wheelSpots } from '../render/CarModel';
 
 // --- gemeinsame Geometrien (Welt-weit geteilt, werden nie entladen) ---------
@@ -400,6 +400,9 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
   }
   add(group, instanced(benchIronGeo, M.metal, benchIron), instanced(benchWoodGeo, wood, benchWood));
 
+  // --- Raststätten: Zufahrten, Tankdächer, Zapfsäulen, Preismasten, Picknicktische, Mülleimer ---
+  stationParts(spec, group, colliders);
+
   // --- Straßenmarkierungen, Bordsteine, Gullys, Risse, Straßenmöbel, Gras ---
   if (spec.land === 'town') streetDetails(spec, cx, cz, group, colliders);
 
@@ -550,6 +553,7 @@ const WHITE_PAINT = 0xeeece4, YELLOW_PAINT = 0xe2b440;
 function gridRoads(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group): void {
   const M = mats();
   const ox = cx * CHUNK, oz = cz * CHUNK;
+  const tr = rng((chunkSeed(cx, cz) ^ 0x7ac3b1d5) >>> 0);
   const plane = (mat: THREE.Material, x0: number, z0: number, x1: number, z1: number, y: number) => {
     const m = mesh(unitPlane, mat, (x0 + x1) / 2, y, (z0 + z1) / 2);
     m.scale.set(x1 - x0, 1, z1 - z0);
@@ -576,6 +580,31 @@ function gridRoads(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group):
     if (!spec.urbanV) dirtStrip(ox - 0.8, vz0, ox + ROAD + 0.8, oz + CHUNK);
   }
 
+  // Enden von Landstraßen und Rampen, die an der Stadtstraße beginnen (p: Endpunkt, n: Punkt etwas weiter auf dem Pfad)
+  const joins = spec.paths
+    .filter((q) => q.path.kind === 'country' || q.path.kind === 'ramp' || q.path.kind === 'lane')
+    .flatMap((q) => {
+      const pts = q.path.pts, last = pts.length - 1;
+      const out: { p: { x: number; z: number }; n: { x: number; z: number }; w: number }[] = [];
+      if (q.i0 === 0) out.push({ p: pts[0], n: pts[Math.min(3, last)], w: q.path.width });
+      if (q.i1 === last) out.push({ p: pts[last], n: pts[Math.max(0, last - 3)], w: q.path.width });
+      return out;
+    });
+  // Das Stück des Pfades, das auf der Stadtstraße liegt (samt seiner Randlinien), mit Asphalt abdecken
+  for (const j of joins) {
+    const inH = spec.roadH && j.p.x >= ox && j.p.x < ox + CHUNK && Math.abs(j.p.z - cH) < halfH;
+    const inV = spec.roadV && j.p.z >= oz && j.p.z < oz + CHUNK && Math.abs(j.p.x - cV) < halfV;
+    if (inH) {
+      const sd = Math.sign(j.n.z - j.p.z), edge = cH + sd * halfH;
+      const a = Math.min(edge, j.p.z - sd * 0.6), b = Math.max(edge, j.p.z - sd * 0.6);
+      plane(M.street, j.p.x - j.w / 2 - 1, a, j.p.x + j.w / 2 + 1, b, 0.0395);
+    } else if (inV) {
+      const sd = Math.sign(j.n.x - j.p.x), edge = cV + sd * halfV;
+      const a = Math.min(edge, j.p.x - sd * 0.6), b = Math.max(edge, j.p.x - sd * 0.6);
+      plane(M.street, a, j.p.z - j.w / 2 - 1, b, j.p.z + j.w / 2 + 1, 0.0395);
+    }
+  }
+
   // --- Markierungen ---
   const paint: Inst[] = [], tracks: Inst[] = [];
   const line = (x0: number, z0: number, x1: number, z1: number, color: number, y = 0.045) => {
@@ -599,18 +628,40 @@ function gridRoads(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group):
     } else {
       dashed(alongX, m0, m1, c, 0.13, YELLOW_PAINT);
     }
-    // Randlinien neben Rinne bzw. Bankett
+    // Randlinien neben Rinne bzw. Bankett, unterbrochen, wo eine Landstraße oder Rampe einmündet
     const e0 = a0 + (jA[0] ? nearSquare : 0) + cut(jA[0], jA[1], false), e1 = a1 - cut(jB[0], jB[1], false);
     const inset = urban ? 0.55 : 0.3;
-    for (const sd of [-1, 1]) run(alongX, e0, e1, c + sd * (half - inset), 0.12, WHITE_PAINT);
-    // Fahrspuren: zwei dunklere, abgefahrene Bänder je Fahrstreifen
+    for (const sd of [-1, 1]) {
+      const gaps = joins
+        .filter((j) => {
+          const along = alongX ? j.p.x : j.p.z, perp = alongX ? j.p.z : j.p.x, dir = (alongX ? j.n.z : j.n.x) - perp;
+          return along > a0 - j.w && along < a1 + j.w && Math.abs(perp - c) < half + 3 && Math.sign(dir) === sd;
+        })
+        .map((j) => {
+          const along = alongX ? j.p.x : j.p.z;
+          return [along - j.w / 2 - 2.5, along + j.w / 2 + 2.5] as const;
+        })
+        .sort((p0, p1) => p0[0] - p1[0]);
+      let from = e0;
+      for (const [g0, g1] of gaps) {
+        run(alongX, from, Math.min(e1, g0), c + sd * (half - inset), 0.12, WHITE_PAINT);
+        from = Math.max(from, g1);
+      }
+      run(alongX, from, e1, c + sd * (half - inset), 0.12, WHITE_PAINT);
+    }
+    // Fahrspuren: abgefahrene Bänder je Rad, in Abschnitten mit wechselnder Stärke, Breite und Lage (nie überall gleich)
     for (const lane of [-1, 1]) {
       for (const wh of [-0.78, 0.78]) {
-        const off = c + lane * half * 0.5 + wh;
-        const len = m1 - m0;
-        if (len <= 0) continue;
-        const mid = (m0 + m1) / 2;
-        tracks.push({ m: alongX ? mat4(mid, 0.038, off, 0, len, 1, 0.75) : mat4(off, 0.038, mid, Math.PI / 2, len, 1, 0.75), color: 0x1d1d20 });
+        for (let a = m0 + tr() * 6; a < m1 - 2; ) {
+          const len = Math.min(m1 - a, 5 + tr() * 16);
+          if (tr() < 0.72) {
+            const off = c + lane * half * 0.5 + wh + (tr() - 0.5) * 0.35;
+            const mid = a + len / 2, w = 0.5 + tr() * 0.45;
+            const tone = [0x141416, 0x1d1d20, 0x2a2a2d, 0x3a3a3d][Math.floor(tr() * 4)];
+            tracks.push({ m: alongX ? mat4(mid, 0.038, off, 0, len, 1, w) : mat4(off, 0.038, mid, Math.PI / 2, len, 1, w), color: tone });
+          }
+          a += len + tr() * 8;
+        }
       }
     }
   };
@@ -687,6 +738,161 @@ function gridRoads(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group):
     group.add(m);
   }
   for (const [ax, az, bx, bz, y] of gutter) plane(M.gutter, ax, az, bx, bz, y);
+}
+
+/** Farbige Teilgeometrie (Vertexfarben, ohne UV) zum Zusammenfügen */
+const tint = (g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry => {
+  const c = new THREE.Color(hex);
+  return colored(g.index ? g.toNonIndexed() : g, c.r, c.g, c.b);
+};
+const cbox = (w: number, h: number, d: number, x: number, y: number, z: number, hex: number) => tint(new THREE.BoxGeometry(w, h, d).translate(x, y, z), hex);
+const ccyl = (r0: number, r1: number, h: number, x: number, y: number, z: number, hex: number, seg = 10) => tint(new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z), hex);
+
+/** Zapfsäuleninsel: Betonsockel mit Rammschutz, zwei Säulen mit Anzeige, Schläuchen und Zapfpistolen (entlang z) */
+const pumpIslandGeo = (() => {
+  const parts: THREE.BufferGeometry[] = [
+    cbox(1.2, 0.2, 5.4, 0, 0.1, 0, 0xb8b4aa), // Sockel
+    cbox(1.24, 0.04, 5.44, 0, 0.21, 0, 0xd8d4ca), // Kante
+  ];
+  for (const z of [-2.55, 2.55]) {
+    parts.push(ccyl(0.09, 0.09, 0.9, 0, 0.65, z, 0xe0b52c), ccyl(0.095, 0.095, 0.08, 0, 0.75, z, 0x1c1c1e)); // Rammpoller
+  }
+  for (const z of [-1.2, 1.2]) {
+    parts.push(
+      cbox(0.5, 1.6, 0.85, 0, 1.0, z, 0xe9e7e0), // Gehäuse
+      cbox(0.52, 0.28, 0.87, 0, 1.92, z, 0xb8322a), // Kopf in Markenfarbe
+      cbox(0.52, 0.06, 0.87, 0, 1.75, z, 0xf0f0ec),
+      cbox(0.54, 0.3, 0.5, 0, 1.4, z, 0x16181c), // Anzeige (beidseitig)
+      cbox(0.56, 0.07, 0.36, 0, 1.47, z, 0x8fbf6a),
+      cbox(0.56, 0.24, 0.2, 0, 0.75, z - 0.24, 0x2a2b2e), // Zapfpistolen-Halter
+      cbox(0.56, 0.24, 0.2, 0, 0.75, z + 0.24, 0x2a2b2e),
+    );
+    for (const sx of [-1, 1]) {
+      // Schlauch: Bogen vom Kopf zum Halter
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sx * 0.27, 1.75, z), new THREE.Vector3(sx * 0.42, 1.3, z + 0.1), new THREE.Vector3(sx * 0.36, 0.7, z + 0.05), new THREE.Vector3(sx * 0.29, 0.8, z - 0.24),
+      ]);
+      parts.push(tint(new THREE.TubeGeometry(curve, 10, 0.022, 5), 0x141416));
+    }
+  }
+  return mergeGeometries(parts)!;
+})();
+
+/** Picknicktisch: Tischplatte und zwei Bänke aus Bohlen, Stahlbeine (entlang x) */
+const picnicGeo = (() => {
+  const wood = 0x8a6a45, plank = 0x7a5c3a, iron = 0x34383c;
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) parts.push(cbox(1.9, 0.045, 0.17, 0, 0.75, -0.27 + i * 0.18, i % 2 ? wood : plank));
+  for (const sz of [-1, 1]) {
+    for (let i = 0; i < 2; i++) parts.push(cbox(1.9, 0.04, 0.14, 0, 0.45, sz * (0.62 + i * 0.15), i ? wood : plank));
+  }
+  for (const sx of [-0.75, 0.75]) {
+    for (const sz of [-1, 1]) {
+      const leg = new THREE.BoxGeometry(0.05, 0.86, 0.06).rotateX(sz * 0.62).translate(sx, 0.4, sz * 0.36);
+      parts.push(tint(leg, iron));
+    }
+    parts.push(cbox(0.05, 0.05, 1.7, sx, 0.42, 0, iron));
+  }
+  return mergeGeometries(parts)!;
+})();
+
+/** Mülleimer mit Deckel und Einwurf */
+const binGeo = mergeGeometries([
+  ccyl(0.27, 0.24, 0.85, 0, 0.425, 0, 0x2f4a3a, 14), ccyl(0.3, 0.3, 0.07, 0, 0.88, 0, 0x20332a, 14), ccyl(0.12, 0.12, 0.04, 0, 0.93, 0, 0x16181a, 10),
+  cbox(0.3, 0.12, 0.05, 0, 0.72, 0.26, 0x16181a),
+])!;
+
+/** Getränkeautomat, Eistruhe und Luftdrucksäule (Front nach +z) */
+const vendorGeo = {
+  drinks: mergeGeometries([
+    cbox(0.95, 1.9, 0.75, 0, 0.95, 0, 0xb8282a), cbox(0.6, 1.2, 0.04, -0.1, 1.15, 0.38, 0x9cc3d8), cbox(0.18, 0.5, 0.04, 0.33, 1.15, 0.38, 0x1a1a1c),
+    cbox(0.97, 0.18, 0.77, 0, 1.82, 0, 0xf2f0ea),
+  ])!,
+  ice: mergeGeometries([
+    cbox(1.3, 1.0, 0.75, 0, 0.5, 0, 0xeef3f6), cbox(1.1, 0.35, 0.04, 0, 0.7, 0.38, 0x2a72b8), cbox(1.32, 0.06, 0.77, 0, 1.02, 0, 0xc8ccd0),
+  ])!,
+  air: mergeGeometries([
+    cbox(0.35, 1.3, 0.3, 0, 0.65, 0, 0x2a5aa8), cbox(0.3, 0.25, 0.04, 0, 1.05, 0.16, 0xe8e6de), ccyl(0.2, 0.2, 0.05, 0, 0.03, 0, 0x6a6c70),
+    tint(new THREE.TorusGeometry(0.14, 0.018, 5, 14).translate(0, 0.6, 0.18), 0x111113),
+  ])!,
+};
+
+/** Leitpfosten: weißer Pfosten mit schwarzem Band und Rückstrahler (Front entlang +z) */
+const postGeo = mergeGeometries([
+  cbox(0.12, 1.0, 0.1, 0, 0.5, 0, 0xeeeeea), cbox(0.125, 0.26, 0.105, 0, 0.85, 0, 0x1a1a1c),
+  cbox(0.05, 0.1, 0.11, 0, 0.85, 0, 0xe8902a),
+])!;
+
+/** Preismast: zwei Stützen, Schild mit Marke und Preisen (beidseitig), Sockel */
+function stationParts(spec: ChunkSpec, group: THREE.Group, colliders: Box[]): void {
+  const M = mats();
+  for (const a of spec.aprons) {
+    const m = mesh(unitPlane, M.street, a.x, 0.016, a.z);
+    m.scale.set(a.w, 1, a.d);
+    group.add(m);
+  }
+  for (const c of spec.edgeCovers) {
+    const m = mesh(unitPlane, M.street, c.x, c.y, c.z);
+    m.scale.set(c.w, 1, c.d);
+    m.rotation.y = c.rot;
+    group.add(m);
+  }
+  // Tankdach: weiße Platte mit farbiger Blende, Leuchtfelder unten, Stützen mit Sockelverkleidung
+  const roofMat = M.train(0xeceae4), bandMat = M.train(0xb8322a), stripeMat = M.train(0xf4f2ec), pillarMat = M.train(0x9a9ca0);
+  const glows: Inst[] = [];
+  for (const c of spec.canopies) {
+    const y = 5.1;
+    add(group, box(roofMat, c.w, 0.6, c.d, c.x, y, c.z));
+    for (const [w, d, x, z] of [[c.w + 0.24, 0.12, c.x, c.z - c.d / 2 - 0.06], [c.w + 0.24, 0.12, c.x, c.z + c.d / 2 + 0.06], [0.12, c.d, c.x - c.w / 2 - 0.06, c.z], [0.12, c.d, c.x + c.w / 2 + 0.06, c.z]] as const) {
+      add(group, box(bandMat, w, 0.62, d, x, y + 0.02, z), box(stripeMat, w + 0.02, 0.08, d + 0.02, x, y - 0.18, z));
+    }
+    for (let x = c.x - c.w / 2 + 2; x <= c.x + c.w / 2 - 2; x += 3.2) {
+      for (const dz of [-c.d / 4, c.d / 4]) {
+        const lamp = new THREE.Mesh(boxGeo, M.lampHead);
+        lamp.scale.set(1.8, 0.04, 0.5);
+        lamp.position.set(x, y - 0.32, c.z + dz);
+        group.add(lamp);
+        glows.push({ m: mat4(x, 0.07, c.z + dz, 0, 0.6, 1, 0.6) });
+      }
+    }
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const px = c.x + sx * (c.w / 2 - 2.2), pz = c.z + sz * (c.d / 2 - 1.8);
+        add(group, box(pillarMat, 0.42, y - 0.3, 0.42, px, (y - 0.3) / 2, pz), box(bandMat, 0.56, 1.1, 0.56, px, 0.55, pz));
+        colliders.push({ x: px, z: pz, w: 0.6, d: 0.6 });
+      }
+    }
+  }
+  add(group, instanced(glowGeo, M.glow, glows, false));
+  add(group, instanced(pumpIslandGeo, M.trim, spec.pumps.map((p) => ({ m: mat4(p.x, 0, p.z, p.rot) }))));
+  for (const p of spec.pumps) colliders.push({ x: p.x, z: p.z, w: 1.4, d: 5.6 });
+  for (const py of spec.pylons) {
+    const legH = py.h - 3.4;
+    for (const dx of [-1, 1]) add(group, box(M.metal, 0.22, legH, 0.22, py.x + dx * 1.1, legH / 2, py.z));
+    add(group, box(M.prop(0xb8b4aa), 2.9, 0.4, 0.8, py.x, 0.2, py.z));
+    add(group, box(M.prop(0x26282c), 2.8, 3.6, 0.3, py.x, legH + 1.7, py.z));
+    // Schild beidseitig, Platten vor und hinter dem Kasten
+    const sign = plate(2.6, 3.4, M.sign('pylon'), py.x, legH + 1.7, py.z, py.rot);
+    sign.children.forEach((c) => (c.position.z = Math.sign(c.position.z) * 0.16));
+    add(group, sign);
+    colliders.push({ x: py.x, z: py.z, w: 3, d: 0.9 });
+  }
+  add(group, instanced(picnicGeo, M.trim, spec.picnics.map((p) => ({ m: mat4(p.x, 0, p.z, p.rot) }))));
+  for (const p of spec.picnics) colliders.push({ x: p.x, z: p.z, w: 1.9, d: 1.9 });
+  for (const kind of ['drinks', 'ice', 'air'] as const) {
+    const list = spec.vendors.filter((v) => v.kind === kind);
+    add(group, instanced(vendorGeo[kind], M.trim, list.map((v) => ({ m: mat4(v.x, 0.05, v.z, v.rot) }))));
+    for (const v of list) colliders.push({ x: v.x, z: v.z, w: kind === 'ice' ? 1.4 : 0.9, d: 0.9 });
+  }
+  for (const sb of spec.slabs) {
+    const m = new THREE.Mesh(makeBox(sb.w, 0.012, sb.d, 4, 4), M.floorConcrete);
+    m.userData.ownGeo = true;
+    m.position.set(sb.x, 0.054, sb.z);
+    m.receiveShadow = true;
+    group.add(m);
+  }
+  add(group, instanced(binGeo, M.trim, spec.bins.map((b) => ({ m: mat4(b.x, 0.05, b.z, (b.x * 7) % 6.28) }))));
+  for (const b of spec.bins) colliders.push({ x: b.x, z: b.z, w: 0.6, d: 0.6 });
 }
 
 /** Grasbüschel: viele schmale, gebogene Halme mit Farbverlauf (dunkel am Fuß, hell an der Spitze) */
@@ -773,27 +979,61 @@ function streetDetails(spec: ChunkSpec, cx: number, cz: number, group: THREE.Gro
   };
   const hasRoad = spec.roadH || spec.roadV;
   const right = (h: boolean) => (h ? 0 : Math.PI / 2) + (r() < 0.5 ? 0 : Math.PI);
-  for (let i = 0; hasRoad && i < 7; i++) {
+  const along = (h: boolean) => (h ? 0 : Math.PI / 2);
+  const pickOf = <T,>(a: T[]): T => a[Math.floor(r() * a.length)];
+  // Zustand der Straße je Chunk: von frisch saniert (0,4) bis völlig kaputt (1,6)
+  const wear = 0.4 + r() * 1.2;
+  const n = (k: number) => Math.round(k * wear * (0.7 + r() * 0.6));
+  for (let i = 0; hasRoad && i < n(5); i++) {
     const p = onRoad();
     const tone = [0x45474b, 0x505257, 0x5c5e62][Math.floor(r() * 3)]; // frische Flicken dunkler, alte heller
-    dec('patch', p.x, 0.039, p.z, 1.4 + r() * 2.4, 0.9 + r() * 1.4, right(p.h), tone);
+    dec('patch', p.x, 0.039, p.z, 1.2 + r() * 2.6, 0.8 + r() * 1.5, right(p.h), tone);
   }
-  for (let i = 0; hasRoad && i < 12; i++) {
+  if (hasRoad && r() < 0.35 * wear) {
+    // aufgegrabene Leitung: langer, schmaler Flicken quer oder längs über die Fahrbahn
+    const p = onRoad(), cross = r() < 0.5;
+    const len = cross ? ROAD - 1 : 8 + r() * 18;
+    const x = cross && !p.h ? ox + ROAD / 2 : p.x, z = cross && p.h ? oz + ROAD / 2 : p.z;
+    dec('trench', x, 0.0395, z, len, 0.7 + r() * 0.5, along(p.h) + (cross ? Math.PI / 2 : 0), [0x3f4145, 0x4c4e52][Math.floor(r() * 2)]);
+  }
+  for (let i = 0; hasRoad && i < n(10); i++) {
     const p = onRoad();
-    dec('crack', p.x, 0.041, p.z, 1.4 + r() * 2.6, 0.35 + r() * 0.25, r() * Math.PI, 0x161617);
+    const name = pickOf<'crack' | 'crack2' | 'crack3' | 'tar'>(['crack', 'crack2', 'crack3', 'crack2', 'tar']);
+    const tone = name === 'tar' ? 0x0c0c0d : 0x161617;
+    dec(name, p.x, 0.041, p.z, 1.2 + r() * 3, name === 'crack3' ? 0.5 + r() * 0.3 : 0.3 + r() * 0.25, r() < 0.6 ? along(p.h) + (r() - 0.5) * 0.6 : r() * Math.PI, tone);
   }
-  for (let i = 0; hasRoad && i < 3; i++) {
+  for (let i = 0; hasRoad && i < n(2); i++) {
     const p = onRoad();
-    const rr = 0.5 + r() * 0.5;
-    dec('pothole', p.x, 0.042, p.z, rr * 1.3, rr, r() * Math.PI, 0x3a3a3c);
+    const s0 = 1 + r() * 1.8;
+    dec('alligator', p.x, 0.0405, p.z, s0 * 1.3, s0, r() * Math.PI, 0x1a1a1c);
   }
-  for (let i = 0; hasRoad && i < 6; i++) {
+  for (let i = 0; hasRoad && i < n(4); i++) {
+    // Schlaglöcher: meist klein, selten groß, drei Formen
+    const p = onRoad();
+    const big = r() < 0.2, rr = big ? 0.8 + r() * 0.6 : 0.25 + r() * 0.45;
+    dec(pickOf<'pothole' | 'pothole2' | 'pothole3'>(['pothole', 'pothole2', 'pothole3']), p.x, 0.042, p.z, rr * (1.1 + r() * 0.5), rr, r() * Math.PI, 0x3a3a3c);
+  }
+  for (let i = 0; hasRoad && i < n(5); i++) {
     // Ölflecken in der Mitte der Fahrstreifen, wo Autos stehen
     const p = onRoad();
     const lane = (r() < 0.5 ? -1 : 1) * ROAD * 0.25;
     const x = p.h ? p.x : ox + ROAD / 2 + lane, z = p.h ? oz + ROAD / 2 + lane : p.z;
-    const s0 = 0.6 + r() * 0.9;
-    dec('stain', x, 0.04, z, s0 * (1.2 + r() * 0.6), s0, r() * Math.PI, 0x141416);
+    const s0 = 0.4 + r() * 1.1;
+    dec('stain', x, 0.04, z, s0 * (1.2 + r() * 0.6), s0, r() * Math.PI, pickOf([0x141416, 0x1e1c1a, 0x26231f]));
+  }
+  for (let i = 0; hasRoad && i < 1 + Math.floor(r() * 3); i++) {
+    // Bremsspuren in Fahrtrichtung, gern vor der Kreuzung
+    const p = onRoad();
+    const lane = (r() < 0.5 ? -1 : 1) * ROAD * 0.25;
+    const x = p.h ? p.x : ox + ROAD / 2 + lane, z = p.h ? oz + ROAD / 2 + lane : p.z;
+    dec('skid', x, 0.0415, z, 5 + r() * 12, 1.5, along(p.h) + (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 0.12, pickOf([0x0e0e10, 0x18181a]));
+  }
+  for (let i = 0; hasRoad && i < n(2); i++) {
+    // Pfützen an der Rinne, wo das Wasser stehen bleibt
+    const p = onRoad();
+    const edge = (r() < 0.5 ? 0.9 : ROAD - 0.9);
+    const x = p.h ? p.x : ox + edge, z = p.h ? oz + edge : p.z;
+    dec('puddle', x, 0.043, z, 1.2 + r() * 2.2, 0.6 + r() * 0.7, along(p.h), 0x3c4249);
   }
   const manholes: THREE.Mesh[] = [];
   for (let i = 0; hasRoad && i < 2; i++) {
@@ -983,7 +1223,13 @@ function buildPaths(spec: ChunkSpec, group: THREE.Group, ox: number, oz: number)
     strip(sl, out + 1.7, out, 0.011, vergeMat!, 4, 4, 0, taper, { wobble, fade: 'A' });
     strip(sl, -out, -(out + 1.7), 0.011, vergeMat!, 4, 4, 0, taper, { wobble, fade: 'B' });
   };
-  const guards: Inst[] = [], posts: Inst[] = [], medians: Inst[] = [], rails: Inst[] = [], sleepers: Inst[] = [];
+  const guards: Inst[] = [], posts: Inst[] = [], medians: Inst[] = [], rails: Inst[] = [], sleepers: Inst[] = [], reflectors: Inst[] = [];
+  // Leitpfosten nicht in Einfahrten zu Nebenstraßen und Raststätten
+  const laneStarts = spec.paths.filter((q) => q.path.kind === 'lane' && q.i0 === 0).map((q) => q.path.pts[0]);
+  const stations = stationsNear(Math.floor(ox / CHUNK), Math.floor(oz / CHUNK), 8);
+  const blockedPost = (x: number, z: number) =>
+    laneStarts.some((p) => Math.hypot(p.x - x, p.z - z) < 9)
+    || stations.some((st) => Math.abs(x - st.x) < st.w / 2 + 4 && Math.abs(z - st.z) < st.d / 2 + 12);
   for (const sl of spec.paths) {
     const p = sl.path;
     const w = p.width;
@@ -1014,6 +1260,17 @@ function buildPaths(spec: ChunkSpec, group: THREE.Group, ox: number, oz: number)
       case 'country':
         verge(sl, w / 2 + 1.6);
         strip(sl, w / 2, -w / 2, 0.022, M.road, 8, w, 0.5);
+        // Leitpfosten alle 50 m, beidseitig versetzt, nicht an Einfahrten
+        for (const side of [-1, 1]) {
+          for (const e of edgePoints(sl, side * (w / 2 + 0.9), 50, (x, z) => own(x, z) && !blockedPost(x, z))) {
+            reflectors.push({ m: mat4(e.x, 0, e.z, e.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2)) });
+          }
+        }
+        break;
+      case 'lane':
+        // Nebenstraße: schmaler, alter Asphalt ohne Markierung auf einem Schotterbankett
+        verge(sl, w / 2 + 0.35);
+        strip(sl, w / 2, -w / 2, 0.021, M.street, 8, 8);
         break;
       case 'boulevard':
         strip(sl, w / 2 + 2, -(w / 2 + 2), 0.045, M.paving, 2, 2);
@@ -1033,5 +1290,93 @@ function buildPaths(spec: ChunkSpec, group: THREE.Group, ox: number, oz: number)
     group,
     instanced(guardGeo, M.metal, guards), instanced(guardPostGeo, M.metal, posts), instanced(medianGeo, M.concrete, medians),
     instanced(railGeo, M.rail, rails, false), instanced(sleeperGeo, M.sleeper, sleepers, false),
+    instanced(postGeo, M.trim, reflectors),
   );
+  pathWear(spec, group, ox, oz, own);
+}
+
+/**
+ * Verschleiß auf kurvigen Straßen: Fahrspuren in Abschnitten (unterschiedlich stark, breit und versetzt),
+ * Risse, Netzrisse, Flicken, Schlaglöcher, Ölflecken, Bremsspuren und Pfützen. Jedes Stück gehört genau einem Chunk.
+ */
+function pathWear(spec: ChunkSpec, group: THREE.Group, ox: number, oz: number, own: (x: number, z: number) => boolean): void {
+  const M = mats();
+  const rr = rng((chunkSeed(Math.floor(ox / CHUNK), Math.floor(oz / CHUNK)) ^ 0x3c6ef372) >>> 0);
+  const decals = new Map<DecalName, Inst[]>();
+  const put = (name: DecalName, x: number, y: number, z: number, w: number, d: number, rot: number, color: number) => {
+    if (!own(x, z)) return;
+    const list = decals.get(name) ?? [];
+    list.push({ m: mat4(x, y, z, rot, w, 1, d), color });
+    decals.set(name, list);
+  };
+  const pickOf = <T,>(a: T[]): T => a[Math.floor(rr() * a.length)];
+  const BASE: Partial<Record<string, number>> = { highway: 0.03, country: 0.022, lane: 0.021, ramp: 0.034, service: 0.034, boulevard: 0.05 };
+  for (const sl of spec.paths) {
+    const p = sl.path;
+    const y0 = BASE[p.kind];
+    if (y0 === undefined) continue;
+    const s0 = p.cum[sl.i0], s1 = p.cum[sl.i1];
+    const w = p.width;
+    // Fahrspuren je Fahrstreifen: Mitte der Spur, Räder 0,78 m daneben
+    const laneCentres = p.kind === 'highway' ? [-6.75, -3.25, 3.25, 6.75] : p.kind === 'lane' || p.oneway ? [0] : [-w / 4, w / 4];
+    for (const c of laneCentres) {
+      for (const wh of [-0.78, 0.78]) {
+        for (let s = s0 + rr() * 6; s < s1; ) {
+          const run = 5 + rr() * 18;
+          if (rr() < 0.7) {
+            const tone = pickOf([0x141416, 0x1d1d20, 0x2a2a2d, 0x3a3a3d]), wd = 0.5 + rr() * 0.45, jit = (rr() - 0.5) * 0.35;
+            for (let a = s; a < Math.min(s + run, s1); a += 6) {
+              const L = Math.min(6, s + run - a, s1 - a);
+              const q = lanePose(p, a + L / 2, c + wh + jit);
+              put('track', q.x, y0 + 0.002, q.z, L + 0.4, wd, q.rot, tone);
+            }
+          }
+          s += run + rr() * 8;
+        }
+      }
+    }
+    // Schäden: auf Nebenstraßen und Landstraßen mehr als auf der Autobahn
+    const k = ((s1 - s0) / 64) * (p.kind === 'lane' ? 1.6 : p.kind === 'country' ? 1.2 : 0.8);
+    const at = (spread: number) => {
+      const q = lanePose(p, s0 + rr() * (s1 - s0), (rr() - 0.5) * spread);
+      return q;
+    };
+    for (let i = 0; i < Math.round(6 * k); i++) {
+      const q = at(w - 1);
+      const name = pickOf<DecalName>(['crack', 'crack2', 'crack3', 'tar']);
+      put(name, q.x, y0 + 0.004, q.z, 1.2 + rr() * 2.8, name === 'crack3' ? 0.5 : 0.35, q.rot + (rr() < 0.6 ? (rr() - 0.5) * 0.6 : rr() * 3), name === 'tar' ? 0x0c0c0d : 0x161617);
+    }
+    for (let i = 0; i < Math.round(1.6 * k * rr() * 2); i++) {
+      const q = at(w - 1.5);
+      // Flicken unterschiedlich: kleine Ausbesserungen, lange Streifen in der Fahrspur, selten große Flächen
+      const kind = rr();
+      const L = kind < 0.5 ? 0.8 + rr() * 1.2 : kind < 0.85 ? 3 + rr() * 6 : 2 + rr() * 2;
+      const D = kind < 0.5 ? 0.6 + rr() * 0.8 : kind < 0.85 ? 0.7 + rr() * 0.5 : 1.8 + rr() * 1.4;
+      put('patch', q.x, y0 + 0.003, q.z, L, D, q.rot + (kind < 0.5 ? rr() * 0.5 : 0), pickOf([0x2e3033, 0x383a3e, 0x44464a]));
+    }
+    for (let i = 0; i < Math.round(1.2 * k); i++) {
+      const q = at(w - 1.5);
+      const s = 1 + rr() * 1.6;
+      put('alligator', q.x, y0 + 0.0035, q.z, s * 1.3, s, rr() * 3, 0x1a1a1c);
+    }
+    for (let i = 0; i < Math.round((p.kind === 'highway' ? 0.6 : 2.5) * k); i++) {
+      const q = at(w - 1);
+      const big = rr() < 0.2, r0 = big ? 0.8 + rr() * 0.5 : 0.25 + rr() * 0.45;
+      put(pickOf<DecalName>(['pothole', 'pothole2', 'pothole3']), q.x, y0 + 0.005, q.z, r0 * (1.1 + rr() * 0.5), r0, rr() * 3, 0x3a3a3c);
+    }
+    for (let i = 0; i < Math.round(2 * k); i++) {
+      const q = lanePose(p, s0 + rr() * (s1 - s0), pickOf(laneCentres));
+      const s = 0.4 + rr();
+      put('stain', q.x, y0 + 0.0045, q.z, s * 1.4, s, rr() * 3, pickOf([0x141416, 0x1e1c1a, 0x26231f]));
+    }
+    if (rr() < 0.45 * k) {
+      const q = lanePose(p, s0 + rr() * (s1 - s0), pickOf(laneCentres));
+      put('skid', q.x, y0 + 0.0042, q.z, 6 + rr() * 14, 1.5, q.rot + (rr() - 0.5) * 0.15, pickOf([0x0e0e10, 0x18181a]));
+    }
+    for (let i = 0; i < Math.round(0.8 * k); i++) {
+      const q = at(w - 0.6);
+      put('puddle', q.x, y0 + 0.0048, q.z, 1.2 + rr() * 2.4, 0.6 + rr() * 0.8, q.rot, 0x3c4249);
+    }
+  }
+  for (const [name, list] of decals) add(group, instanced(unitPlane, M.decal(name), list, false));
 }

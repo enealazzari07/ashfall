@@ -98,6 +98,135 @@ export function paintAsphaltBase(g: CanvasRenderingContext2D, n: number, seed = 
   }
 }
 
+/** Riss-Variante: verzweigte Linie quer über die Kachel (256 x 64) */
+function crackVariant(r: () => number, branches: number, wide: number): HTMLCanvasElement {
+  const [c, g] = canvas(256, 64);
+  g.lineCap = g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.lineWidth = wide;
+  const pts: [number, number][] = [];
+  let x = 6, y = 20 + r() * 24, a = (r() - 0.5) * 0.6;
+  g.beginPath();
+  g.moveTo(x, y);
+  while (x < 250) {
+    a = Math.max(-0.8, Math.min(0.8, a + (r() - 0.5) * 0.9));
+    x += 4 + r() * 5;
+    y = Math.max(8, Math.min(56, y + Math.sin(a) * 6));
+    g.lineTo(x, y);
+    pts.push([x, y]);
+  }
+  g.stroke();
+  g.lineWidth = Math.max(0.8, wide * 0.5);
+  g.strokeStyle = 'rgba(255,255,255,0.8)';
+  for (let i = 0; i < branches; i++) {
+    const [bx, by] = pts[Math.floor(r() * pts.length)];
+    crackPath(g, r, bx, by, (r() < 0.5 ? -1 : 1) * (0.8 + r() * 0.8), 8 + r() * 26, 4);
+  }
+  return c;
+}
+
+/** Netzrisse („Krokodilhaut“): Zellen aus Rissen in einem ausgefransten Fleck (128 x 128) */
+function alligatorVariant(r: () => number): HTMLCanvasElement {
+  const [c, g] = canvas(128, 128);
+  const seeds: [number, number][] = [];
+  for (let i = 0; i < 26; i++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 50;
+    seeds.push([64 + Math.cos(a) * d, 64 + Math.sin(a) * d * 0.8]);
+  }
+  // Voronoi-Kanten grob: Pixel, deren zwei nächste Zentren fast gleich weit sind
+  const img = g.createImageData(128, 128);
+  for (let y = 0; y < 128; y++) {
+    for (let x = 0; x < 128; x++) {
+      let d1 = Infinity, d2 = Infinity;
+      for (const [sx, sy] of seeds) {
+        const d = Math.hypot(x - sx, y - sy);
+        if (d < d1) [d1, d2] = [d, d1];
+        else if (d < d2) d2 = d;
+      }
+      const edge = Math.max(0, 1 - (d2 - d1) / 1.6);
+      const fall = Math.max(0, 1 - Math.hypot(x - 64, (y - 64) * 1.2) / 60);
+      const i = (y * 128 + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.min(1, edge * 1.4) * Math.min(1, fall * 2.2) * 235;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+/** Schlagloch-Variante (128 x 128): `round` 0 = lang gezogen, 1 = rund; `n` Krümel am Rand */
+function potholeVariant(r: () => number, round: number, n: number): HTMLCanvasElement {
+  const [c, g] = canvas(128, 128);
+  const sy = 0.55 + round * 0.4;
+  g.beginPath();
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2, rad = 34 + r() * 22;
+    const x = 64 + Math.cos(a) * rad, y = 64 + Math.sin(a) * rad * sy;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath();
+  g.fillStyle = 'rgba(150,150,150,1)';
+  g.fill();
+  g.lineWidth = 4 + r() * 3;
+  g.strokeStyle = 'rgba(255,255,255,0.9)';
+  g.stroke();
+  const gr = g.createRadialGradient(64, 64, 2, 64, 64, 44);
+  gr.addColorStop(0, 'rgba(0,0,0,0.6)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr;
+  g.fill();
+  if (r() < 0.6) {
+    // Wasser in der Mulde
+    g.fillStyle = 'rgba(90,100,110,0.55)';
+    g.beginPath();
+    g.ellipse(64 + (r() - 0.5) * 10, 66, 16 + r() * 10, (10 + r() * 6) * sy, r(), 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '40,40,40'},0.75)`;
+    const a = r() * Math.PI * 2, d = 40 + r() * 22;
+    g.fillRect(64 + Math.cos(a) * d, 64 + Math.sin(a) * d * sy, 2 + r() * 3, 2 + r() * 3);
+  }
+  return c;
+}
+
+/** Bremsspur: zwei dunkle Streifen (u längs), am Anfang schwach, am Ende kräftig, leicht schlingernd (256 x 64) */
+function skidVariant(r: () => number): HTMLCanvasElement {
+  const [c, g] = canvas(256, 64);
+  const wob = r() * 6;
+  for (const y0 of [18, 46]) {
+    for (let x = 0; x < 256; x += 2) {
+      const t = x / 256;
+      const a = Math.min(1, t * 2.2) * (0.55 + 0.35 * Math.sin(x * 0.07 + y0)) * (t > 0.96 ? (1 - t) * 25 : 1);
+      const y = y0 + Math.sin(t * Math.PI * 1.3 + y0) * wob;
+      g.fillStyle = `rgba(255,255,255,${Math.max(0, a) * 0.85})`;
+      g.fillRect(x, y - 5, 2, 10);
+    }
+  }
+  return c;
+}
+
+/** Bitumen-Fugenverguss: glänzende, wellige Linien, mit denen Risse versiegelt wurden (256 x 64) */
+function tarVariant(r: () => number): HTMLCanvasElement {
+  const [c, g] = canvas(256, 64);
+  g.lineCap = g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.lineWidth = 4.5;
+  let x = 4, y = 32, a = 0;
+  g.beginPath();
+  g.moveTo(x, y);
+  while (x < 252) {
+    a = Math.max(-0.6, Math.min(0.6, a + (r() - 0.5) * 0.7));
+    x += 6;
+    y = Math.max(10, Math.min(54, y + Math.sin(a) * 5));
+    g.lineTo(x, y);
+  }
+  g.stroke();
+  g.lineWidth = 3;
+  for (let i = 0; i < 2; i++) crackPath(g, r, 40 + r() * 170, 32, (r() < 0.5 ? -1 : 1) * 1.2, 14 + r() * 14, 4);
+  return c;
+}
+
 export interface StreetTex {
   /** Asphalt ohne Linien, 8 m Kachel (Weltkoordinaten) */
   street: THREE.CanvasTexture;
@@ -112,6 +241,16 @@ export interface StreetTex {
   stain: THREE.CanvasTexture;
   track: THREE.CanvasTexture;
   pothole: THREE.CanvasTexture;
+  /** weitere Varianten: andere Risse, Netzrisse, kleine/runde Schlaglöcher, Längsflicken, Bremsspuren, Verguss, Pfützen */
+  crack2: THREE.CanvasTexture;
+  crack3: THREE.CanvasTexture;
+  alligator: THREE.CanvasTexture;
+  pothole2: THREE.CanvasTexture;
+  pothole3: THREE.CanvasTexture;
+  trench: THREE.CanvasTexture;
+  skid: THREE.CanvasTexture;
+  tar: THREE.CanvasTexture;
+  puddle: THREE.CanvasTexture;
   grate: THREE.CanvasTexture;
   manhole: THREE.CanvasTexture;
   /** weicher Kontaktschatten unter Autos (Alpha) */
@@ -380,7 +519,45 @@ export function streetTextures(): StreetTex | null {
     bg.putImageData(img, 0, 0);
   }
 
+  // --- Längsflicken (aufgegrabene Leitung): schmal und lang, gerade Schnittkanten ---
+  const [lc, lg] = canvas(256, 64);
+  {
+    const img = lg.createImageData(256, 64);
+    for (let i = 0; i < 256 * 64; i++) {
+      const v = 200 + (r() - 0.5) * 44 + (r() < 0.04 ? 30 : 0);
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    lg.putImageData(img, 0, 0);
+    lg.strokeStyle = 'rgba(90,90,92,1)';
+    lg.lineWidth = 5;
+    lg.strokeRect(3, 6, 250, 52);
+    lg.fillStyle = 'rgba(90,90,92,0.6)';
+    for (let x = 30; x < 240; x += 40 + r() * 40) lg.fillRect(x, 6, 3, 52); // Quernähte
+    // außerhalb des Streifens durchsichtig
+    lg.clearRect(0, 0, 256, 4);
+    lg.clearRect(0, 60, 256, 4);
+  }
+
+  // --- Pfütze: weicher, unregelmäßiger Fleck (spiegelnd über das Material) ---
+  const [qc, qg] = canvas(128, 128);
+  {
+    for (let i = 0; i < 9; i++) {
+      const x = 64 + (r() - 0.5) * 50, y = 64 + (r() - 0.5) * 30, rad = 14 + r() * 22;
+      const gr = qg.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(255,255,255,0.85)');
+      gr.addColorStop(0.75, 'rgba(255,255,255,0.7)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      qg.fillStyle = gr;
+      qg.fillRect(0, 0, 128, 128);
+    }
+  }
+
   cache = {
+    crack2: tex(crackVariant(rand(17), 3, 1.6), false), crack3: tex(crackVariant(rand(23), 9, 3), false),
+    alligator: tex(alligatorVariant(rand(31)), false),
+    pothole2: tex(potholeVariant(rand(41), 1, 25), false), pothole3: tex(potholeVariant(rand(47), 0.2, 50), false),
+    trench: tex(lc, false), skid: tex(skidVariant(rand(53)), false), tar: tex(tarVariant(rand(59)), false), puddle: tex(qc, false),
     street: tex(sc, true), curb: tex(cc, true), cobble: tex(kc, true), paint: tex(pc, true),
     crack: tex(rc, false), patch: tex(fc, false), stain: tex(oc, false), track: tex(tc2, true), pothole: tex(hc, false),
     grate: tex(gc, false), manhole: tex(mc, false), blob: tex(bc, false),

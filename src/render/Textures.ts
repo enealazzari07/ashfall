@@ -165,6 +165,44 @@ export function signTexture(key: string): THREE.CanvasTexture | null {
       g.fillText('A9  ^  München', 24, 38);
       g.fillText('Nürnberg  >  A3', 24, 90);
     });
+  } else if (key === 'pylon') {
+    // Preismast der Tankstelle: Marke oben, darunter Preise in Leuchtziffern (manche Stellen sind ausgefallen)
+    tex = make(256, 336, (g, w, h) => {
+      g.fillStyle = '#f2f0ea';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#b8322a';
+      g.fillRect(0, 0, w, 120);
+      g.fillStyle = '#f2f0ea';
+      g.beginPath();
+      g.arc(w / 2, 58, 40, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#b8322a';
+      g.font = 'bold 34px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('GAS', w / 2, 60);
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 112, w, 6);
+      const rows: [string, string][] = [['REGULAR', '3.4_9'], ['SUPER', '3.8_'], ['DIESEL', '_.99']];
+      rows.forEach(([name, price], i) => {
+        const y = 140 + i * 64;
+        g.fillStyle = '#1b1d22';
+        g.fillRect(10, y, w - 20, 54);
+        g.fillStyle = '#d9d6cc';
+        g.font = 'bold 18px sans-serif';
+        g.textAlign = 'left';
+        g.fillText(name, 20, y + 27);
+        g.fillStyle = '#ff8a2a';
+        g.font = 'bold 34px monospace';
+        g.textAlign = 'right';
+        g.fillText(price.replace(/_/g, ' '), w - 20, y + 29);
+      });
+      // Rost und Dreck
+      for (let i = 0; i < 40; i++) {
+        g.fillStyle = `rgba(110,70,40,${Math.random() * 0.25})`;
+        g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 8, 2 + Math.random() * 14);
+      }
+    });
   } else if (key.startsWith('shop:')) {
     const [name, col] = key.slice(5).split('|');
     tex = make(512, 96, (g, w, h) => {
@@ -627,18 +665,16 @@ export function textures(): Textures {
       speckle(g, w, h, 1800, ['#6e6b65', '#9a978f', '#77746d', '#a6a39b', '#5e5c57'], 3);
     }),
 
-    asphaltPlain: make(256, 256, (g, w, h) => {
-      g.fillStyle = '#34353a';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2500, ['#3d3e43', '#2b2c30', '#47484d'], 2);
-    }),
+    asphaltPlain: make(512, 512, (g, w) => paintAsphaltBase(g, w, 13)),
 
     // Kachel 8 m (u) x 22 m (v): 2x2 Spuren, Mittelstreifen, Seitenstreifen
     highway: make(128, 352, (g, w, h) => {
       const m = 16; // px pro Meter
-      g.fillStyle = '#34353a';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2500, ['#3d3e43', '#2b2c30', '#47484d'], 2);
+      // feiner Asphalt (gleiche Körnung wie die Stadtstraßen): 128-px-Kachel nahtlos übereinander
+      const base = document.createElement('canvas');
+      base.width = base.height = 128;
+      paintAsphaltBase(base.getContext('2d')!, 128, 19);
+      for (let y = 0; y < h; y += 128) g.drawImage(base, 0, y);
       g.fillStyle = '#8f8d86'; // Mittelstreifen (Beton)
       g.fillRect(0, 9.5 * m, w, 3 * m);
       g.fillStyle = '#e8e8e8';

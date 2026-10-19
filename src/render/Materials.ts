@@ -8,6 +8,9 @@ import { StreetTex, streetTextures } from './StreetTextures';
 /** Windzeit für Gras und Blumen (Sekunden); wird beim Zeichnen der Büschel gesetzt */
 export const windTime = { value: 0 };
 
+export type DecalName = 'crack' | 'crack2' | 'crack3' | 'alligator' | 'patch' | 'trench' | 'stain' | 'puddle' | 'track' | 'skid' | 'tar'
+  | 'pothole' | 'pothole2' | 'pothole3' | 'grate';
+
 const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 0.9, ...o });
 
 /**
@@ -109,7 +112,7 @@ export interface Mats {
   markPaint: THREE.MeshStandardMaterial;
   manhole: THREE.MeshStandardMaterial;
   /** Aufleger je Textur, Farbe pro Instanz */
-  decal(name: 'crack' | 'patch' | 'stain' | 'track' | 'pothole' | 'grate'): THREE.MeshStandardMaterial;
+  decal(name: DecalName): THREE.MeshStandardMaterial;
 }
 
 let cache: Mats | null = null;
@@ -261,7 +264,8 @@ export function mats(): Mats {
     gutter: worldUV(std({ map: st?.cobble ?? null, roughness: 0.9, ...n(st?.cobble ?? null, 3, 1) }), 1),
     markPaint: worldUV(decal(st?.paint ?? null, { roughness: 0.7 }), 5),
     manhole: std({ map: st?.manhole ?? null, metalness: 0.45, roughness: 0.65, ...n(st?.manhole ?? null, 3, 1) }),
-    decal: (name) => memo(decals, name, () => decal(st?.[name] ?? null)),
+    // Pfützen spiegeln (glatt), Verguss glänzt leicht
+    decal: (name) => memo(decals, name, () => decal(st?.[name] ?? null, name === 'puddle' ? { roughness: 0.08, metalness: 0.2 } : name === 'tar' ? { roughness: 0.35 } : {})),
     sign: (key) =>
       memo(signs, key, () => new THREE.MeshBasicMaterial({
         map: signTexture(key), transparent: true, alphaTest: 0.4, // FrontSide: Rückseite ist eine eigene Platte
