@@ -1,10 +1,14 @@
-# Baut den Windows-Installer und veröffentlicht ihn als GitHub-Release, sobald ein Tag v* gepusht wird.
+# Baut den Windows-Installer und veröffentlicht ihn als GitHub-Release:
+# bei einem Tag v*, von Hand, oder wenn auf main package.json (neue Version) oder dieser Workflow geändert wird
+# (gibt es den Release zur Version schon, passiert nichts).
 # Titel "Ashfall <Version>", Beschreibung aus .github/release-notes.md.
 name: Release
 
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: [package.json, .github/workflows/release.yml]
   workflow_dispatch:
 
 permissions:
@@ -16,27 +20,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Version prüfen
+        id: ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" != tag ]] && gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag gibt es schon – nichts zu tun."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.ver.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
 
       - name: Abhängigkeiten
+        if: steps.ver.outputs.skip != 'true'
         run: npm ci
 
       - name: Tests
+        if: steps.ver.outputs.skip != 'true'
         run: npx vitest run
 
       - name: Bauen und veröffentlichen
+        if: steps.ver.outputs.skip != 'true'
         run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Titel und Beschreibung
+        if: steps.ver.outputs.skip != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF_NAME}"
-          [[ "$tag" == v* ]] || tag="v$(node -p "require('./package.json').version")"
+          tag="${{ steps.ver.outputs.tag }}"
           gh release edit "$tag" --title "Ashfall ${tag#v}" --notes-file .github/release-notes.md --draft=false --latest
