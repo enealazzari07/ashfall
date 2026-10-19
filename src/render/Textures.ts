@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paintAsphaltBase } from './StreetTextures';
 
 type Draw = (g: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -312,24 +313,20 @@ export function textures(): Textures {
       }
     }),
 
-    // Textur-Höhe = Straßenbreite (8 m): Mittellinie + Randlinien
-    asphalt: make(256, 256, (g, w, h) => {
-      g.fillStyle = '#3b3c41';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2200, ['#45464b', '#303136', '#4c4d52', '#2a2b2f'], 2);
-      g.fillStyle = 'rgba(200,200,200,0.55)';
-      g.fillRect(0, 8, w, 4);
-      g.fillRect(0, h - 12, w, 4);
-      g.fillStyle = '#d9b94a';
-      g.fillRect(0, h / 2 - 4, w * 0.5, 8);
-      g.strokeStyle = 'rgba(0,0,0,0.35)';
-      g.lineWidth = 1.5;
-      for (let i = 0; i < 6; i++) {
-        g.beginPath();
-        let x = Math.random() * w, y = Math.random() * h;
-        g.moveTo(x, y);
-        for (let k = 0; k < 4; k++) g.lineTo((x += (Math.random() - 0.3) * 18), (y += (Math.random() - 0.5) * 14));
-        g.stroke();
+    // Kachel 8 m (u), Textur-Höhe = Straßenbreite: feiner Asphalt, gestrichelte Mittellinie, Randlinien (kurvige Straßen)
+    asphalt: make(512, 512, (g, w, h) => {
+      paintAsphaltBase(g, w, 11);
+      g.fillStyle = 'rgba(214,212,204,0.8)';
+      g.fillRect(0, 14, w, 6);
+      g.fillRect(0, h - 20, w, 6);
+      g.fillStyle = 'rgba(217,185,74,0.9)';
+      g.fillRect(0, h / 2 - 4, w * 0.4, 8);
+      // Abrieb: Asphaltkörner über den Linien
+      for (let i = 0; i < 900; i++) {
+        const v = 50 + Math.random() * 30;
+        g.fillStyle = `rgba(${v},${v},${v + 3},${0.3 + Math.random() * 0.5})`;
+        const y = [17, h - 17, h / 2][i % 3] + (Math.random() - 0.5) * 9;
+        g.fillRect(Math.random() * w, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
       }
     }),
 

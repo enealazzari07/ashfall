@@ -747,8 +747,14 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
 
     // Geparkte Autos auf den Fahrbahnen (nie auf der Spawn-Kreuzung)
     for (let k = 0; k < Math.floor(r() * (land === 'town' ? 3 + urb * 5 : 0)); k++) {
-      if (roadH && (r() < 0.5 || !roadV)) addCar(ox + 16 + r() * 44, oz + (r() < 0.5 ? ROAD * 0.27 : ROAD * 0.73), 0);
-      else if (roadV) addCar(ox + (r() < 0.5 ? ROAD * 0.27 : ROAD * 0.73), oz + 16 + r() * 44, Math.PI / 2);
+      // Rechtsverkehr: Autos stehen in Fahrtrichtung ihres Fahrstreifens (gleiche Zufallsfolge wie zuvor)
+      if (roadH && (r() < 0.5 || !roadV)) {
+        const x = ox + 16 + r() * 44, north = r() < 0.5;
+        addCar(x, oz + (north ? ROAD * 0.27 : ROAD * 0.73), north ? Math.PI : 0);
+      } else if (roadV) {
+        const west = r() < 0.5;
+        addCar(ox + (west ? ROAD * 0.27 : ROAD * 0.73), oz + 16 + r() * 44, west ? -Math.PI / 2 : Math.PI / 2);
+      }
     }
   }
 

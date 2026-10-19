@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
-  Box, CHUNK, Car, ChunkSpec, HIGHWAY_WIDTH, ROAD, SIDEWALK, Wagon, chunkSeed, rng,
+  Box, CHUNK, Car, ChunkSpec, HIGHWAY_WIDTH, ROAD, SIDEWALK, Wagon, chunkSeed, landOf, rng,
 } from './CityGenerator';
 import { Inst, instanced, makeBox, mat4, planeXZ } from '../render/geo';
 import { mats, windTime } from '../render/Materials';
@@ -10,8 +10,8 @@ import { URBAN, urbanClone } from '../render/UrbanAssets';
 import { bushGeometry } from '../render/Trees';
 import { buildTrees } from '../render/TreeMesh';
 import { edgePoints, stripGeo } from '../render/RoadRibbon';
-import { poseAt } from './WorldMap';
-import { Livery, carGeos, carMats, decalGeo, modelOf, wheelSpots } from '../render/CarModel';
+import { edgeRoad, poseAt } from './WorldMap';
+import { Livery, carGeos, carMats, decalGeo, modelOf, shadowGeo, wheelSpots } from '../render/CarModel';
 
 // --- gemeinsame Geometrien (Welt-weit geteilt, werden nie entladen) ---------
 /** Autos, die schon gefahren wurden, werden in Chunks nicht mehr aufgestellt */
@@ -33,17 +33,17 @@ export interface CarSet {
   groups: CarGroup[];
   /** Lackierung/Verschleiß-Aufleger je Modell/Livery/Stufe */
   decals: { key: string; mesh: THREE.InstancedMesh | null }[];
+  /** Kontaktschatten, eine Instanz je Auto in der Reihenfolge von `list` */
+  shadow: THREE.InstancedMesh | null;
 }
 
 const stallLineGeo = new THREE.BoxGeometry(0.1, 0.01, 5.2);
-const padMat = new THREE.MeshStandardMaterial({ color: 0x4a4b50, roughness: 0.95 });
 const stallPaint = new THREE.MeshStandardMaterial({ color: 0xe8e6dc, roughness: 0.9 });
 const groundGeo = planeXZ(CHUNK, CHUNK, 8, 8);
-const roadHGeo = planeXZ(CHUNK, ROAD, 8, ROAD); // Mittellinie läuft entlang X
-const roadVGeo = planeXZ(CHUNK - ROAD, ROAD, 8, ROAD).rotateY(Math.PI / 2);
-const walkH = makeBox(CHUNK - ROAD, 0.14, SIDEWALK, 2, 2);
-const walkV = makeBox(SIDEWALK, 0.14, CHUNK - ROAD - 2 * SIDEWALK, 2, 2);
-const roadVFullGeo = planeXZ(CHUNK, ROAD, 8, ROAD).rotateY(Math.PI / 2);
+/** Fläche 1 x 1 m in XZ (UV 0..1, v quer zur x-Achse): Straßen, Markierungen und Aufleger, per Instanz skaliert */
+const unitPlane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+/** Gehwegstreifen 1 x 0,14 x 1 m, per Mesh skaliert (Textur in Weltkoordinaten, daher keine Verzerrung) */
+const walkGeo = new THREE.BoxGeometry(1, 0.14, 1);
 const railGeo = new THREE.BoxGeometry(2.1, 0.16, 0.1);
 const sleeperGeo = new THREE.BoxGeometry(0.3, 0.12, 2.6);
 const guardGeo = new THREE.BoxGeometry(4.2, 0.5, 0.08);
@@ -229,38 +229,12 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
 
   add(group, mesh(groundGeo, M.ground, ox + CHUNK / 2, 0, oz + CHUNK / 2));
 
-  // Landstraßen: schmaler Asphalt (6 m) auf einem Schotterstreifen, ohne Gehweg; an der Stadt voll breit
-  const dirtStrip = (w: number, d: number, x: number, z: number) => {
-    const m = new THREE.Mesh(makeBox(w, 0.02, d, 4, 4), M.floorDirt);
-    m.userData.ownGeo = true;
-    m.position.set(x, 0.012, z);
-    m.receiveShadow = true;
-    group.add(m);
-  };
-  if (spec.roadH) {
-    const m = mesh(roadHGeo, M.road, ox + CHUNK / 2, 0.02, oz + ROAD / 2);
-    if (!spec.urbanH) {
-      m.scale.z = 0.75;
-      dirtStrip(CHUNK, ROAD + 1.6, ox + CHUNK / 2, oz + ROAD / 2);
-    }
-    add(group, m);
-  }
-  if (spec.roadV) {
-    // ohne Querstraße am Nordrand läuft die Straße bis zur Chunk-Kante (sonst endet sie an der Kreuzung)
-    const full = !spec.roadH;
-    const len = full ? CHUNK : CHUNK - ROAD;
-    const cz0 = full ? oz + CHUNK / 2 : oz + ROAD + (CHUNK - ROAD) / 2;
-    const m = mesh(full ? roadVFullGeo : roadVGeo, M.road, ox + ROAD / 2, 0.03, cz0);
-    if (!spec.urbanV) {
-      m.scale.x = 0.75;
-      dirtStrip(ROAD + 1.6, len, ox + ROAD / 2, cz0);
-    }
-    add(group, m);
-  }
+  // Straßen im Raster: Asphalt, Markierungen, Fahrspuren; in der Stadt Bordsteine, Rinnen und Gehwege
+  gridRoads(spec, cx, cz, group);
 
   // Gassen: vier Meter breit, enden im Hinterhof
   const alley = (w: number, d: number, x: number, z: number) => {
-    const m = new THREE.Mesh(makeBox(w, 0.03, d, 4, 4), M.road);
+    const m = new THREE.Mesh(makeBox(w, 0.03, d, 4, 4), M.street);
     m.userData.ownGeo = true;
     m.position.set(x, 0.025, z);
     m.receiveShadow = true;
@@ -277,7 +251,7 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
 
   // Asphaltflächen (Raststätte, Hof)
   for (const pd of spec.pads) {
-    const m = new THREE.Mesh(makeBox(pd.w, 0.05, pd.d, 6, 6), padMat);
+    const m = new THREE.Mesh(makeBox(pd.w, 0.05, pd.d, 6, 6), M.street);
     m.userData.ownGeo = true;
     m.position.set(pd.x, 0.025, pd.z);
     m.receiveShadow = true;
@@ -301,26 +275,6 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
     o.rotation.y = md.rot;
     group.add(o);
     if (md.solid) colliders.push({ x: md.x, z: md.z, w: URBAN[md.name].radius * 2, d: URBAN[md.name].radius * 2 });
-  }
-
-  // --- Gehwege (nur in der Stadt, nur an vorhandenen Straßen) ---
-  if (spec.land === 'town') {
-    const x0 = spec.roadV ? ox + ROAD : ox, x1 = ox + CHUNK;
-    const hStrip = (z: number) => {
-      const m = mesh(walkH, M.paving, (x0 + x1) / 2, 0.07, z);
-      m.scale.x = (x1 - x0) / (CHUNK - ROAD);
-      add(group, m);
-    };
-    if (spec.roadH) hStrip(oz + ROAD + SIDEWALK / 2);
-    if (spec.roadS) hStrip(oz + CHUNK - SIDEWALK / 2);
-    const z0 = spec.roadH ? oz + ROAD + SIDEWALK : oz, z1 = spec.roadS ? oz + CHUNK - SIDEWALK : oz + CHUNK;
-    const vStrip = (x: number) => {
-      const m = mesh(walkV, M.paving, x, 0.07, (z0 + z1) / 2);
-      m.scale.z = (z1 - z0) / (CHUNK - ROAD - 2 * SIDEWALK);
-      add(group, m);
-    };
-    if (spec.roadV) vStrip(ox + ROAD + SIDEWALK / 2);
-    if (spec.roadE) vStrip(ox + CHUNK - SIDEWALK / 2);
   }
 
   // --- Kurvige Straßen, Autobahn, Bahn ---
@@ -456,6 +410,7 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
   const slot: { model: number; i: number; dkey: string | null; di: number }[] = [];
   const decalInst = new Map<string, { model: number; livery: Livery; tier: number; list: Inst[] }>();
   const carBoxes: Box[] = [];
+  const shadows: Inst[] = [];
   for (const c of spec.cars) {
     if (takenCars.has(carKey(c))) continue;
     const md = modelOf(c.model);
@@ -474,6 +429,7 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
       d.list.push({ m: base });
     }
     slot.push({ model: mi, i: grp.paint.length, dkey, di });
+    shadows.push({ m: mat4(c.x, 0.06, c.z, c.rot, md.len + 0.6, 1, md.W + 0.5) });
     grp.paint.push({ m: base, color: c.color });
     grp.glass.push({ m: base });
     grp.trim.push({ m: base });
@@ -484,6 +440,8 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
     colliders.push(box);
   }
   const CM = carMats();
+  const shadowMesh = instanced(shadowGeo, CM.shadow, shadows, false);
+  if (shadowMesh) add(group, shadowMesh);
   const carGroups: CarGroup[] = [];
   for (const [mi, grp] of groups) {
     const G = carGeos(mi);
@@ -503,7 +461,232 @@ export function buildTerrain(spec: ChunkSpec, cx: number, cz: number, group: THR
     if (mesh) add(group, mesh);
     decals.push({ key, mesh });
   }
-  group.userData.cars = { list: built, boxes: carBoxes, slot, groups: carGroups, decals } as CarSet;
+  group.userData.cars = { list: built, boxes: carBoxes, slot, groups: carGroups, decals, shadow: shadowMesh } as CarSet;
+}
+
+/** Liegt an der Nordwest-Ecke von Chunk (a,b) eine Kreuzung oder Einmündung? */
+const junctionAt = (a: number, b: number): boolean =>
+  (edgeRoad('N', a, b) || edgeRoad('N', a - 1, b)) && (edgeRoad('W', a, b) || edgeRoad('W', a, b - 1));
+/** Hat diese Kreuzung Zebrastreifen und Haltelinien (wie in streetDetails gezeichnet)? */
+const crossingAt = (a: number, b: number): boolean => landOf(a, b) === 'town' && edgeRoad('N', a, b) && edgeRoad('W', a, b);
+
+/** Bordsteinprofil (quer, Straßenseite bei 0): senkrechte Ansicht, Fase, Oberseite */
+const CURB_PROFILE: [number, number][] = [[0, 0], [0, 0.115], [0.035, 0.15], [0.18, 0.15]];
+
+/** Sammelt Bordsteine eines Chunks in einer Geometrie (UV in Metern: u längs, v übers Profil). */
+class CurbBuilder {
+  pos: number[] = [];
+  nor: number[] = [];
+  uv: number[] = [];
+
+  /**
+   * Bordstein entlang einer Kante: (x, z) Startpunkt an der Straßenkante, (dx, dz) Laufrichtung,
+   * (sx, sz) Querrichtung von der Straße zum Gehweg (beides Einheitsvektoren), len Länge in Metern.
+   */
+  add(x: number, z: number, dx: number, dz: number, sx: number, sz: number, len: number): void {
+    const P = CURB_PROFILE;
+    const W = (s: number, y: number, t: number): [number, number, number] => [x + dx * t + sx * s, y, z + dz * t + sz * s];
+    let v = 0;
+    for (let k = 0; k < P.length - 1; k++) {
+      const [s0, y0] = P[k], [s1, y1] = P[k + 1];
+      const segLen = Math.hypot(s1 - s0, y1 - y0);
+      // Normale im Profil: (−dy, ds) → Welt
+      const ns = -(y1 - y0) / segLen, ny = (s1 - s0) / segLen;
+      const n: [number, number, number] = [sx * ns, ny, sz * ns];
+      const A = W(s0, y0, 0), B = W(s0, y0, len), C = W(s1, y1, len), D = W(s1, y1, 0);
+      const v1 = v + segLen / 0.3;
+      this.quad(A, B, C, D, n, [0, v], [len, v], [len, v1], [0, v1]);
+      v = v1;
+    }
+    // Stirnseiten
+    const cap = (t: number, sign: number) => {
+      const poly = [...P, [0.18, 0] as [number, number]];
+      const n: [number, number, number] = [dx * sign, 0, dz * sign];
+      for (let i = 1; i < poly.length - 1; i++) {
+        const tri = [poly[0], poly[i], poly[i + 1]];
+        const pts = tri.map(([s, y]) => W(s, y, t));
+        this.tri(pts[0], pts[1], pts[2], n, tri.map(([s, y]) => [s / 0.3, y / 0.3] as [number, number]));
+      }
+    };
+    cap(0, -1);
+    cap(len, 1);
+  }
+
+  private tri(a: number[], b: number[], c: number[], n: [number, number, number], uv: [number, number][]): void {
+    // Wicklung an der gewünschten Normale ausrichten
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const flip = cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0;
+    const order = flip ? [0, 2, 1] : [0, 1, 2];
+    const p = [a, b, c];
+    for (const i of order) {
+      this.pos.push(...p[i]);
+      this.nor.push(...n);
+      this.uv.push(...uv[i]);
+    }
+  }
+
+  private quad(a: number[], b: number[], c: number[], d: number[], n: [number, number, number], ua: [number, number], ub: [number, number], uc: [number, number], ud: [number, number]): void {
+    this.tri(a, b, c, n, [ua, ub, uc]);
+    this.tri(a, c, d, n, [ua, uc, ud]);
+  }
+
+  build(): THREE.BufferGeometry | null {
+    if (!this.pos.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    return g;
+  }
+}
+
+const WHITE_PAINT = 0xeeece4, YELLOW_PAINT = 0xe2b440;
+
+/**
+ * Straßen im Chunk-Raster: Asphaltflächen (Textur in Weltkoordinaten, daher nahtlos), Markierungen als eigene Flächen
+ * (enden vor Kreuzungen und Zebrastreifen), abgefahrene Spuren; in der Stadt Gehwege, Bordsteine mit Fase und Pflasterrinnen.
+ */
+function gridRoads(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group): void {
+  const M = mats();
+  const ox = cx * CHUNK, oz = cz * CHUNK;
+  const plane = (mat: THREE.Material, x0: number, z0: number, x1: number, z1: number, y: number) => {
+    const m = mesh(unitPlane, mat, (x0 + x1) / 2, y, (z0 + z1) / 2);
+    m.scale.set(x1 - x0, 1, z1 - z0);
+    group.add(m);
+  };
+  // Landstraßen: schmaler Asphalt (7,5 m) auf einem Schotterstreifen, ohne Gehweg; an der Stadt voll breit
+  const dirtStrip = (x0: number, z0: number, x1: number, z1: number) => {
+    const m = new THREE.Mesh(makeBox(x1 - x0, 0.02, z1 - z0, 4, 4), M.floorDirt);
+    m.userData.ownGeo = true;
+    m.position.set((x0 + x1) / 2, 0.012, (z0 + z1) / 2);
+    m.receiveShadow = true;
+    group.add(m);
+  };
+  const halfH = spec.urbanH ? ROAD / 2 : ROAD * 0.375, halfV = spec.urbanV ? ROAD / 2 : ROAD * 0.375;
+  const cH = oz + ROAD / 2, cV = ox + ROAD / 2;
+  if (spec.roadH) {
+    plane(M.street, ox, cH - halfH, ox + CHUNK, cH + halfH, 0.02);
+    if (!spec.urbanH) dirtStrip(ox, oz - 0.8, ox + CHUNK, oz + ROAD + 0.8);
+  }
+  // Die Nord-Süd-Straße beginnt in der Kreuzungsmitte (überdeckt dort dieselbe Textur), sonst an der Chunk-Kante
+  const vz0 = spec.roadH ? cH : oz;
+  if (spec.roadV) {
+    plane(M.street, cV - halfV, vz0, cV + halfV, oz + CHUNK, 0.03);
+    if (!spec.urbanV) dirtStrip(ox - 0.8, vz0, ox + ROAD + 0.8, oz + CHUNK);
+  }
+
+  // --- Markierungen ---
+  const paint: Inst[] = [], tracks: Inst[] = [];
+  const line = (x0: number, z0: number, x1: number, z1: number, color: number, y = 0.045) => {
+    if (x1 - x0 <= 0.01 || z1 - z0 <= 0.01) return;
+    paint.push({ m: mat4((x0 + x1) / 2, y, (z0 + z1) / 2, 0, x1 - x0, 1, z1 - z0), color });
+  };
+  /** Markierung entlang einer Achse: a0..a1 längs, Querlage c ± w/2; `alongX` legt die Achse fest */
+  const run = (alongX: boolean, a0: number, a1: number, c: number, w: number, color: number) =>
+    alongX ? line(a0, c - w / 2, a1, c + w / 2, color) : line(c - w / 2, a0, c + w / 2, a1, color);
+  const dashed = (alongX: boolean, a0: number, a1: number, c: number, w: number, color: number) => {
+    // weltfest ausgerichtet (Periode 8 m: 3 m Strich, 5 m Lücke), damit die Striche über Chunkgrenzen weiterlaufen
+    for (let s = Math.floor(a0 / 8) * 8; s < a1; s += 8) run(alongX, Math.max(a0, s), Math.min(a1, s + 3), c, w, color);
+  };
+  const cut = (junction: boolean, crossing: boolean, centre: boolean) => (!junction ? 0 : crossing ? (centre ? 5.3 : 4.2) : centre ? 0.8 : 0.4);
+  const marks = (alongX: boolean, a0: number, a1: number, c: number, half: number, urban: boolean, jA: [boolean, boolean], jB: [boolean, boolean], nearSquare: number) => {
+    // Mittellinie: in der Stadt doppelt durchgezogen, auf dem Land gestrichelt
+    const m0 = a0 + (jA[0] ? nearSquare : 0) + cut(jA[0], jA[1], true), m1 = a1 - cut(jB[0], jB[1], true);
+    if (urban) {
+      run(alongX, m0, m1, c - 0.1, 0.1, YELLOW_PAINT);
+      run(alongX, m0, m1, c + 0.1, 0.1, YELLOW_PAINT);
+    } else {
+      dashed(alongX, m0, m1, c, 0.13, YELLOW_PAINT);
+    }
+    // Randlinien neben Rinne bzw. Bankett
+    const e0 = a0 + (jA[0] ? nearSquare : 0) + cut(jA[0], jA[1], false), e1 = a1 - cut(jB[0], jB[1], false);
+    const inset = urban ? 0.55 : 0.3;
+    for (const sd of [-1, 1]) run(alongX, e0, e1, c + sd * (half - inset), 0.12, WHITE_PAINT);
+    // Fahrspuren: zwei dunklere, abgefahrene Bänder je Fahrstreifen
+    for (const lane of [-1, 1]) {
+      for (const wh of [-0.78, 0.78]) {
+        const off = c + lane * half * 0.5 + wh;
+        const len = m1 - m0;
+        if (len <= 0) continue;
+        const mid = (m0 + m1) / 2;
+        tracks.push({ m: alongX ? mat4(mid, 0.038, off, 0, len, 1, 0.75) : mat4(off, 0.038, mid, Math.PI / 2, len, 1, 0.75), color: 0x1d1d20 });
+      }
+    }
+  };
+  const jHere = junctionAt(cx, cz), xHere = crossingAt(cx, cz);
+  if (spec.roadH) marks(true, ox, ox + CHUNK, cH, halfH, spec.urbanH, [jHere, xHere], [junctionAt(cx + 1, cz), crossingAt(cx + 1, cz)], ROAD);
+  if (spec.roadV) {
+    // beginnt die Straße an der Chunk-Kante ohne Kreuzung, laufen die Linien durch
+    marks(false, oz, oz + CHUNK, cV, halfV, spec.urbanV, [jHere, xHere], [junctionAt(cx, cz + 1), crossingAt(cx, cz + 1)], ROAD);
+  }
+  // Zebrastreifen und Haltelinien an der Kreuzung (Ecke des Chunks)
+  if (xHere) {
+    const stripes = (cxm: number, czm: number, alongX: boolean) => {
+      for (let k = 0; k < ROAD - 1; k++) {
+        if (alongX) line(cxm - 1.4, oz + 0.65 + k, cxm + 1.4, oz + 1.15 + k, WHITE_PAINT, 0.046);
+        else line(ox + 0.65 + k, czm - 1.4, ox + 1.15 + k, czm + 1.4, WHITE_PAINT, 0.046);
+      }
+    };
+    stripes(ox + ROAD + 2.6, 0, true); // Ostarm
+    if (spec.armW) stripes(ox - 2.6, 0, true); // Westarm
+    stripes(0, oz + ROAD + 2.6, false); // Südarm
+    if (spec.armN) stripes(0, oz - 2.6, false); // Nordarm
+    // Haltelinien über die Fahrbahnhälfte, die auf die Kreuzung zufährt (Rechtsverkehr)
+    const lane = ROAD * 0.425;
+    line(ox + ROAD + 4.8, cH - 0.25 - lane, ox + ROAD + 5.2, cH - 0.25, WHITE_PAINT);
+    if (spec.armW) line(ox - 5.2, cH + 0.25, ox - 4.8, cH + 0.25 + lane, WHITE_PAINT);
+    line(cV + 0.25, oz + ROAD + 4.8, cV + 0.25 + lane, oz + ROAD + 5.2, WHITE_PAINT);
+    if (spec.armN) line(cV - 0.25 - lane, oz - 5.2, cV - 0.25, oz - 4.8, WHITE_PAINT);
+  }
+  add(group, instanced(unitPlane, M.decal('track'), tracks, false), instanced(unitPlane, M.markPaint, paint, false));
+
+  // --- Gehwege, Bordsteine und Pflasterrinnen (nur in der Stadt, nur an vorhandenen Straßen) ---
+  if (spec.land !== 'town') return;
+  const x0 = spec.roadV ? ox + ROAD : ox, x1 = ox + CHUNK;
+  const z0 = spec.roadH ? oz + ROAD : oz, z1 = oz + CHUNK;
+  const walk = (ax: number, az: number, bx: number, bz: number) => {
+    const m = mesh(walkGeo, M.sidewalk, (ax + bx) / 2, 0.07, (az + bz) / 2);
+    m.scale.set(bx - ax, 1, bz - az);
+    group.add(m);
+  };
+  if (spec.roadH) walk(x0, oz + ROAD, x1, oz + ROAD + SIDEWALK);
+  if (spec.roadS) walk(x0, oz + CHUNK - SIDEWALK, x1, oz + CHUNK);
+  const wz0 = spec.roadH ? oz + ROAD + SIDEWALK : oz, wz1 = spec.roadS ? oz + CHUNK - SIDEWALK : oz + CHUNK;
+  if (spec.roadV) walk(ox + ROAD, wz0, ox + ROAD + SIDEWALK, wz1);
+  if (spec.roadE) walk(ox + CHUNK - SIDEWALK, wz0, ox + CHUNK, wz1);
+
+  // Bordsteine laufen über die ganze Gehwegkante (auch um die Ecke an der Kreuzung); 1 cm vor der Gehwegkante gegen Flimmern
+  const curbs = new CurbBuilder();
+  const gutter: [number, number, number, number, number][] = [];
+  const G = 0.3;
+  // Rinnen laufen an Ecken um die Rinnenbreite weiter, damit sich die beiden Richtungen lückenlos treffen
+  const gx0 = spec.roadV ? x0 - G : x0, gx1 = spec.roadE ? x1 + G : x1;
+  const gz0 = spec.roadH ? z0 - G : z0, gz1 = spec.roadS ? z1 + G : z1;
+  if (spec.roadH) {
+    curbs.add(x0, oz + ROAD - 0.01, 1, 0, 0, 1, x1 - x0);
+    gutter.push([gx0, oz + ROAD - G, gx1, oz + ROAD, 0.027]);
+  }
+  if (spec.roadS) {
+    curbs.add(x1, oz + CHUNK + 0.01, -1, 0, 0, -1, x1 - x0);
+    gutter.push([gx0, oz + CHUNK, gx1, oz + CHUNK + G, 0.027]);
+  }
+  if (spec.roadV) {
+    curbs.add(ox + ROAD - 0.01, z1, 0, -1, 1, 0, z1 - z0);
+    gutter.push([ox + ROAD - G, gz0, ox + ROAD, gz1, 0.037]);
+  }
+  if (spec.roadE) {
+    curbs.add(ox + CHUNK + 0.01, z0, 0, 1, -1, 0, z1 - z0);
+    gutter.push([ox + CHUNK, gz0, ox + CHUNK + G, gz1, 0.037]);
+  }
+  const cg = curbs.build();
+  if (cg) {
+    const m = new THREE.Mesh(cg, M.curb);
+    m.userData.ownGeo = true;
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  }
+  for (const [ax, az, bx, bz, y] of gutter) plane(M.gutter, ax, az, bx, bz, y);
 }
 
 /** Grasbüschel: viele schmale, gebogene Halme mit Farbverlauf (dunkel am Fuß, hell an der Spitze) */
@@ -547,13 +730,11 @@ const grassWind = (): void => {
 };
 const cylSmall = new THREE.CylinderGeometry(0.5, 0.5, 1, 14);
 
-/** Zebrastreifen, Haltelinien, Bordsteine, Gullys, Asphaltflicken, Risse, Hydranten, Mülleimer, Briefkästen, Grasbüschel. */
+/** Plattenfugen, Asphaltflicken, Risse, Flecken, Kanaldeckel, Gullys, Hydranten, Mülleimer, Briefkästen, Grasbüschel. */
 function streetDetails(spec: ChunkSpec, cx: number, cz: number, group: THREE.Group, colliders: Box[]): void {
   const M = mats();
   const ox = cx * CHUNK, oz = cz * CHUNK;
   const r = rng((chunkSeed(cx, cz) ^ 0x51ed270b) >>> 0);
-  const paint = M.prop(0xe6e6de), curb = M.prop(0xb9b5aa), dark = M.prop(0x2b2b30), stain = M.prop(0x8c8a82), moss = M.prop(0x5b6e44);
-
   const items = new Map<THREE.Material, Inst[]>();
   const put = (mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number, rot = 0) => {
     const list = items.get(mat) ?? [];
@@ -561,51 +742,6 @@ function streetDetails(spec: ChunkSpec, cx: number, cz: number, group: THREE.Gro
     items.set(mat, list);
   };
   const unit = boxGeo;
-
-  // Fußgängerüberwege und Haltelinien an der Kreuzung (Ecke des Chunks)
-  const stripes = (cxm: number, czm: number, alongX: boolean) => {
-    for (let k = 0; k < ROAD - 1; k++) {
-      if (alongX) put(paint, 2.8, 0.012, 0.5, cxm, 0.044, oz + 0.9 + k * 1.0);
-      else put(paint, 0.5, 0.012, 2.8, ox + 0.9 + k * 1.0, 0.044, czm);
-    }
-  };
-  if (spec.roadH && spec.roadV) {
-    stripes(ox + ROAD + 2.6, 0, true); // Ostarm
-    if (spec.armW) stripes(ox - 2.6, 0, true); // Westarm
-    stripes(0, oz + ROAD + 2.6, false); // Südarm
-    if (spec.armN) stripes(0, oz - 2.6, false); // Nordarm
-    const lane = ROAD * 0.425; // Haltelinie über eine Fahrbahnhälfte
-    put(paint, 0.4, 0.012, lane, ox + ROAD + 5.0, 0.044, oz + ROAD * 0.25 + lane / 2);
-    if (spec.armW) put(paint, 0.4, 0.012, lane, ox - 5.0, 0.044, oz + ROAD * 0.75);
-    put(paint, lane, 0.012, 0.4, ox + ROAD * 0.75, 0.044, oz + ROAD + 5.0);
-    if (spec.armN) put(paint, lane, 0.012, 0.4, ox + ROAD * 0.25, 0.044, oz - 5.0);
-  }
-
-  // Bordsteine: helle Kante zwischen Straße und Gehweg
-  const len = CHUNK - ROAD;
-  if (spec.roadH) put(curb, len, 0.17, 0.14, ox + ROAD + len / 2, 0.085, oz + ROAD + 0.07);
-  if (spec.roadS) put(curb, len, 0.17, 0.14, ox + ROAD + len / 2, 0.085, oz + CHUNK - 0.07);
-  if (spec.roadV) put(curb, 0.14, 0.17, len - 2 * SIDEWALK, ox + ROAD + 0.07, 0.085, oz + ROAD + SIDEWALK + (len - 2 * SIDEWALK) / 2);
-  if (spec.roadE) put(curb, 0.14, 0.17, len - 2 * SIDEWALK, ox + CHUNK - 0.07, 0.085, oz + ROAD + SIDEWALK + (len - 2 * SIDEWALK) / 2);
-  // Fase und Rinne: helle Oberkante auf dem Bordstein, dunkle Rinne davor
-  const lip = M.prop(0xd2cec2), gutter = M.prop(0x25252a);
-  if (spec.roadH) {
-    put(lip, len, 0.012, 0.16, ox + ROAD + len / 2, 0.171, oz + ROAD + 0.08);
-    put(gutter, len, 0.006, 0.12, ox + ROAD + len / 2, 0.05, oz + ROAD - 0.06);
-  }
-  if (spec.roadS) {
-    put(lip, len, 0.012, 0.16, ox + ROAD + len / 2, 0.171, oz + CHUNK - 0.08);
-    put(gutter, len, 0.006, 0.12, ox + ROAD + len / 2, 0.05, oz + CHUNK + 0.06);
-  }
-  const sideLen = len - 2 * SIDEWALK, sideMid = oz + ROAD + SIDEWALK + sideLen / 2;
-  if (spec.roadV) {
-    put(lip, 0.16, 0.012, sideLen, ox + ROAD + 0.08, 0.171, sideMid);
-    put(gutter, 0.12, 0.006, sideLen, ox + ROAD - 0.06, 0.05, sideMid);
-  }
-  if (spec.roadE) {
-    put(lip, 0.16, 0.012, sideLen, ox + CHUNK - 0.08, 0.171, sideMid);
-    put(gutter, 0.12, 0.006, sideLen, ox + CHUNK + 0.06, 0.05, sideMid);
-  }
 
   // Gehwegplatten: Dehnungsfugen quer alle 2 m und eine Längsfuge in der Mitte
   const joint = M.prop(0x6a6861);
@@ -624,47 +760,60 @@ function streetDetails(spec: ChunkSpec, cx: number, cz: number, group: THREE.Gro
   if (spec.roadV) slabsV(ox + ROAD + SIDEWALK / 2);
   if (spec.roadE) slabsV(ox + CHUNK - SIDEWALK / 2);
 
-  // Fahrbahnränder: durchgezogene weiße Linie neben der Rinne
-  const ex0 = spec.roadV ? ox + ROAD : ox;
-  if (spec.roadH) {
-    put(paint, ox + CHUNK - ex0, 0.012, 0.12, (ex0 + ox + CHUNK) / 2, 0.044, oz + ROAD - 0.45);
-    put(paint, ox + CHUNK - ex0, 0.012, 0.12, (ex0 + ox + CHUNK) / 2, 0.044, oz + 0.45);
-  }
-
-  // Asphalt: Flicken, Risse, Schlaglöcher, Kanaldeckel
+  // Aufleger: Flicken, Risse, Schlaglöcher, Ölflecken auf der Fahrbahn; Flecken, Risse, Moos und Kaugummi auf dem Gehweg
+  const decals = new Map<Parameters<typeof M.decal>[0], Inst[]>();
+  const dec = (name: Parameters<typeof M.decal>[0], x: number, y: number, z: number, w: number, d: number, rot: number, color: number) => {
+    const list = decals.get(name) ?? [];
+    list.push({ m: mat4(x, y, z, rot, w, 1, d), color });
+    decals.set(name, list);
+  };
   const onRoad = () => {
-    if (spec.roadH && (!spec.roadV || r() < 0.5)) return { x: ox + 14 + r() * (CHUNK - 18), z: oz + 0.8 + r() * (ROAD - 1.6) };
-    return { x: ox + 0.8 + r() * (ROAD - 1.6), z: oz + 14 + r() * (CHUNK - 18) };
+    if (spec.roadH && (!spec.roadV || r() < 0.5)) return { x: ox + 14 + r() * (CHUNK - 18), z: oz + 0.8 + r() * (ROAD - 1.6), h: true };
+    return { x: ox + 0.8 + r() * (ROAD - 1.6), z: oz + 14 + r() * (CHUNK - 18), h: false };
   };
   const hasRoad = spec.roadH || spec.roadV;
-  for (let i = 0; hasRoad && i < 9; i++) {
+  const right = (h: boolean) => (h ? 0 : Math.PI / 2) + (r() < 0.5 ? 0 : Math.PI);
+  for (let i = 0; hasRoad && i < 7; i++) {
     const p = onRoad();
-    put(dark, 1.4 + r() * 2.2, 0.01, 0.8 + r() * 1.3, p.x, 0.046, p.z, r() < 0.5 ? 0 : Math.PI / 2);
+    const tone = [0x45474b, 0x505257, 0x5c5e62][Math.floor(r() * 3)]; // frische Flicken dunkler, alte heller
+    dec('patch', p.x, 0.039, p.z, 1.4 + r() * 2.4, 0.9 + r() * 1.4, right(p.h), tone);
   }
-  for (let i = 0; hasRoad && i < 14; i++) {
+  for (let i = 0; hasRoad && i < 12; i++) {
     const p = onRoad();
-    put(dark, 1.2 + r() * 3, 0.012, 0.035, p.x, 0.05, p.z, r() * Math.PI);
+    dec('crack', p.x, 0.041, p.z, 1.4 + r() * 2.6, 0.35 + r() * 0.25, r() * Math.PI, 0x161617);
   }
   for (let i = 0; hasRoad && i < 3; i++) {
     const p = onRoad();
-    const rr = 0.3 + r() * 0.3;
-    put(dark, rr * 2, 0.014, rr * 1.4, p.x, 0.052, p.z, r() * Math.PI);
+    const rr = 0.5 + r() * 0.5;
+    dec('pothole', p.x, 0.042, p.z, rr * 1.3, rr, r() * Math.PI, 0x3a3a3c);
+  }
+  for (let i = 0; hasRoad && i < 6; i++) {
+    // Ölflecken in der Mitte der Fahrstreifen, wo Autos stehen
+    const p = onRoad();
+    const lane = (r() < 0.5 ? -1 : 1) * ROAD * 0.25;
+    const x = p.h ? p.x : ox + ROAD / 2 + lane, z = p.h ? oz + ROAD / 2 + lane : p.z;
+    const s0 = 0.6 + r() * 0.9;
+    dec('stain', x, 0.04, z, s0 * (1.2 + r() * 0.6), s0, r() * Math.PI, 0x141416);
   }
   const manholes: THREE.Mesh[] = [];
   for (let i = 0; hasRoad && i < 2; i++) {
     const p = onRoad();
-    const m = new THREE.Mesh(cylSmall, M.metal);
+    const m = new THREE.Mesh(cylSmall, M.manhole);
     m.scale.set(0.9, 0.025, 0.9);
     m.position.set(p.x, 0.05, p.z);
+    m.rotation.y = r() * Math.PI;
     m.receiveShadow = true;
     manholes.push(m);
   }
   add(group, ...manholes);
-  // Gullys am Bordstein
+  // Gullys am Bordstein (in der Rinne)
   for (let i = 0; spec.roadH && i < 4; i++) {
     const x = ox + 14 + r() * (CHUNK - 18);
-    put(dark, 0.9, 0.02, 0.3, x, 0.052, r() < 0.5 ? oz + ROAD - 0.2 : oz + 0.2);
-    for (let k = 0; k < 4; k++) put(stain, 0.04, 0.022, 0.3, x - 0.3 + k * 0.2, 0.053, oz + ROAD - 0.2);
+    dec('grate', x, 0.04, r() < 0.5 ? oz + ROAD - 0.22 : oz + 0.22, 0.9, 0.42, 0, 0xffffff);
+  }
+  for (let i = 0; spec.roadV && i < 3; i++) {
+    const z = oz + 14 + r() * (CHUNK - 18);
+    dec('grate', r() < 0.5 ? ox + ROAD - 0.22 : ox + 0.22, 0.042, z, 0.9, 0.42, Math.PI / 2, 0xffffff);
   }
 
   // Gehwege: abgenutzte Platten, Flecken, Risse, Moos – nicht überall gleich
@@ -677,18 +826,26 @@ function streetDetails(spec: ChunkSpec, cx: number, cz: number, group: THREE.Gro
     if (side === 2) return { x: ox + ROAD + 0.4 + r() * (SIDEWALK - 0.8), z: oz + 14 + r() * (CHUNK - 18) };
     return { x: ox + CHUNK - SIDEWALK + 0.4 + r() * (SIDEWALK - 0.8), z: oz + 14 + r() * (CHUNK - 18) };
   };
-  for (let i = 0; walkSides.length && i < 26; i++) {
+  for (let i = 0; walkSides.length && i < 20; i++) {
     const p = onWalk();
-    put(r() < 0.6 ? stain : paint, 0.8 + r() * 1.2, 0.006, 0.6 + r() * 0.9, p.x, 0.142, p.z, r() < 0.5 ? 0 : Math.PI / 2);
+    const s0 = 0.5 + r() * 1.1;
+    dec('stain', p.x, 0.1415, p.z, s0 * (1 + r()), s0, r() * Math.PI, r() < 0.7 ? 0x6a665e : 0x8a8478);
   }
-  for (let i = 0; walkSides.length && i < 18; i++) {
+  for (let i = 0; walkSides.length && i < 14; i++) {
     const p = onWalk();
-    put(dark, 0.8 + r() * 1.4, 0.008, 0.03, p.x, 0.144, p.z, r() * Math.PI);
+    dec('crack', p.x, 0.142, p.z, 0.8 + r() * 1.4, 0.25 + r() * 0.2, r() * Math.PI, 0x3a3833);
   }
   for (let i = 0; walkSides.length && i < 9; i++) {
     const p = onWalk();
-    put(moss, 0.4 + r() * 0.7, 0.01, 0.2 + r() * 0.3, p.x, 0.145, p.z, r() * Math.PI);
+    const s0 = 0.4 + r() * 0.6;
+    dec('stain', p.x, 0.1425, p.z, s0 * 1.6, s0, r() * Math.PI, 0x4e6a34);
   }
+  for (let i = 0; walkSides.length && i < 30; i++) {
+    const p = onWalk();
+    const s0 = 0.07 + r() * 0.06;
+    dec('stain', p.x, 0.143, p.z, s0, s0, 0, 0x2c2a28);
+  }
+  for (const [name, list] of decals) add(group, instanced(unitPlane, M.decal(name), list, false));
 
   for (const [mat, list] of items) {
     const im = instanced(unit, mat, list, false);
