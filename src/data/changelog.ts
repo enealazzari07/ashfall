@@ -15,6 +15,31 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: '0.4.1',
+    date: '19.10.2026',
+    name: 'Talentbaum, Häuser und übersichtliches Inventar',
+    groups: [
+      {
+        title: 'Talentbaum',
+        items: [
+          { kind: 'neu', text: 'Charakterstufe 1–20: Jede Stufe gibt Talentpunkte (alle 5 Stufen 2 Bonuspunkte). Im Reiter Person → Talente schaltest du sie in sechs Berufszweigen frei (Tischler, Mechaniker, Sanitäter, Schneider, Kämpfer, Überlebender).' },
+          { kind: 'neu', text: 'Herstellen und Bauen zeigt nur Rezepte, die du kennst: Grundrezepte und alles, was du im Talentbaum freigeschaltet hast. Alles außer den Grundrezepten stellst du an einer Werkbank her.' },
+          { kind: 'neu', text: 'Talente geben auch Vorteile: schnelleres Bauen, bessere Autoreparatur, flinkere Behandlung, mehr Nahkampfschaden und mehr Tragkraft.' },
+          { kind: 'besser', text: 'Der Personen-Bereich rechts im Inventar ist aufgeräumt: eigene Reiter für Person, Skills, Talente, Körper und Gesundheit. Rezepte sind nach Gruppen sortiert.' },
+        ],
+      },
+      {
+        title: 'Häuser und Welt',
+        items: [
+          { kind: 'neu', text: 'Drei neue Wandarten (Rauputz, Klinker, Plattenbau) und Verschleiß an den Wänden: Graffiti, Risse, abgeplatzter Putz, Flecken, Einschüsse und Ruß. Manche Häuser sind gepflegt, andere verfallen; mehr kaputte Fenster.' },
+          { kind: 'besser', text: 'Zwischen freistehenden Gebäuden bleibt immer eine Gasse von mindestens 3 m; es gibt mehr L-Häuser.' },
+          { kind: 'besser', text: 'Fenster zeigen nicht mehr auf die Wand eines Nachbarhauses, auch nicht in schmalen Gassen.' },
+          { kind: 'neu', text: 'Werkbank, Schlafen auf Betten und Sofas in Gebäuden, kein Regen im Haus und schnelleres Trocknen, geschlossene Regale und Schränke mit offener Tür.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.4.0',
     date: '19.10.2026',
     name: 'Straßen, Raststätten und Autos',

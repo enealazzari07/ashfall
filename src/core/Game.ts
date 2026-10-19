@@ -38,13 +38,15 @@ import { TREAT_NAME, TREAT_TIME, autoTarget, treat } from '../player/Treatment';
 import { ActionQueue } from '../sim/Actions';
 import { Skills } from '../sim/Skills';
 import { PlayerLevel } from '../sim/Level';
+import { Talents } from '../sim/Talents';
+import { pointsForLevel, talent } from '../data/talents';
 import { BATTERY_FLAT, BATTERY_FRESH, BATTERY_OK, CarParts, crashEngine, enginePower, fuelFraction, installBattery, lightDrain, newParts, refuel, removeBattery, repairEngine, runTick, tryStart } from '../sim/CarParts';
 import { CarAct, CarPanel, CarView } from '../ui/CarPanel';
 import { Build, DEFAULT_BUILD, Fx, applyBuild, effectsOf, startItems } from '../sim/Profile';
 import { SKILL_FX, SKILL_IDS, SkillId, skillName } from '../data/skills';
 import { CharacterCreator } from '../ui/CharacterCreator';
 import { Stack, hasTag, item } from '../data/items';
-import { BENCH_RANGE, PIECES, RECIPES, Recipe, missingFor, needsBench } from '../data/recipes';
+import { BENCH_RANGE, PIECES, Recipe, isKnown, missingFor, needsBench } from '../data/recipes';
 import { Piece, Rot, STORAGE_PIECES, Structures, footprintOf, snapToWalls } from '../world/Structures';
 import { setNightGlow, setWetness } from '../render/Materials';
 import { setXrayRadius, updateXray } from '../render/Xray';
@@ -191,6 +193,8 @@ export class Game {
   readonly skills = new Skills();
   /** Charakterstufe: schaltet Rezepte frei */
   readonly level = new PlayerLevel();
+  /** Freigeschaltete Talente: Rezepte und Vorteile */
+  readonly talents = new Talents();
   private charBuild: Build = { ...DEFAULT_BUILD };
   private traitFx: Fx = effectsOf(DEFAULT_BUILD);
   private skillClock = 0;
@@ -325,6 +329,8 @@ export class Game {
       act: (label, seconds, run) => this.actions.add({ label, duration: seconds, run }),
       skills: () => this.skills,
       level: () => this.level,
+      talents: () => this.talents,
+      unlockTalent: (id) => this.unlockTalent(id),
       nearBench: () => this.nearBench(),
       build: () => this.charBuild,
       xp: (id, amount) => this.gainXp(id, amount),
@@ -353,7 +359,7 @@ export class Game {
       specOf: (cx, cz) => this.world.specOf(cx, cz),
       markers: () => this.mapMarkers(),
     });
-    this.crafting = new CraftingUI(this.inventory, this.level, () => this.nearBench(), (r) => this.craft(r));
+    this.crafting = new CraftingUI(this.inventory, this.talents, () => this.nearBench(), (r) => this.craft(r));
     this.chat = new ChatUI((t) => this.mp?.chat(t));
     this.admin = new AdminUI({
       give: (id, qty) => {
@@ -520,8 +526,7 @@ export class Game {
   }
 
   private craft(r: Recipe): void {
-    const need = r.level ?? 1;
-    if (this.level.level < need) return void this.hud.toast(`Dieses Rezept braucht Charakterstufe ${need}.`, 'warn');
+    if (!isKnown(r, this.talents.knownRecipes())) return void this.hud.toast('Dieses Rezept kennst du noch nicht (Talentbaum).', 'warn');
     if (needsBench(r) && !this.nearBench()) return void this.hud.toast('Dafür brauchst du eine Werkbank in der Nähe.', 'warn');
     const miss = missingFor(r, this.inventory);
     if (miss.length) return void this.hud.toast(`Dir fehlt: ${miss.map((m) => (m.startsWith('Werkzeug') ? m : item(m).name)).join(', ')}`, 'warn');
@@ -529,7 +534,7 @@ export class Game {
     this.inventory.consume(r.inputs);
     this.inventory.add(r.output.id, r.output.qty);
     if (r.xp) this.gainXp(r.xp.skill, r.xp.amount);
-    this.gainCharXp(3 + need * 2);
+    this.gainCharXp(needsBench(r) ? 9 : 4);
     audio.craft();
     this.hud.toast(`${item(r.output.id).name} hergestellt`, 'good');
     // Bauteile landen auf einem freien Platz der Schnellleiste, damit man sie mit der Zahltaste in die Hand nimmt
@@ -979,7 +984,7 @@ export class Game {
     const r = this.carRide;
     if (!r) return;
     const mech = this.skills.level('mechanics');
-    const t = (s: number) => s * SKILL_FX.mechTime(mech);
+    const t = (s: number) => s * SKILL_FX.mechTime(mech) * this.talents.perks().mechTime;
     const inv = this.inventory;
     const done = (): void => {
       this.zombies.noise(r.v.x, r.v.z, 10);
@@ -1039,7 +1044,7 @@ export class Game {
         duration: t(10),
         run: () => {
           if (!inv.consume([{ id: 'enginepart', qty: 1 }])) return;
-          const added = repairEngine(r.parts, 25 * SKILL_FX.repair(mech));
+          const added = repairEngine(r.parts, 25 * SKILL_FX.repair(mech) * this.talents.perks().repair);
           this.gainXp('mechanics', 18);
           this.hud.toast(`Motor um ${Math.round(added)} % verbessert`, 'good');
           done();
@@ -1392,7 +1397,7 @@ export class Game {
       if (!autoTarget(this.health, action)) return void this.hud.toast('Gerade nicht nötig.', 'info');
       this.actions.add({
         label: TREAT_NAME[action],
-        duration: TREAT_TIME[action] * SKILL_FX.treatTime(this.skills.level('firstaid')),
+        duration: TREAT_TIME[action] * SKILL_FX.treatTime(this.skills.level('firstaid')) * this.talents.perks().treat,
         run: () => {
           const target = autoTarget(this.health, action);
           if (!target) return void this.hud.toast('Gerade nicht nötig.', 'info');
@@ -1797,7 +1802,7 @@ export class Game {
     if (!force && this.inventory.hasTag('lockpick')) {
       return this.actions.add({
         label: 'Schloss knacken',
-        duration: 7 * SKILL_FX.buildTime(this.skills.level('carpentry')),
+        duration: 7 * SKILL_FX.buildTime(this.skills.level('carpentry')) * this.talents.perks().build,
         run: () => {
           if (!d.locked) return;
           this.zombies.noise(d.x, d.z, 3);
@@ -1880,7 +1885,7 @@ export class Game {
     if (this.inventory.count('nails') < 1) return void this.hud.toast('Du brauchst Nägel (aus Metallschrott herstellbar).', 'warn');
     this.actions.add({
       label: 'Brett anbringen',
-      duration: 4 * SKILL_FX.buildTime(this.skills.level('carpentry')) * (this.inventory.hasTag('hammer') ? 0.55 : 1),
+      duration: 4 * SKILL_FX.buildTime(this.skills.level('carpentry')) * this.talents.perks().build * (this.inventory.hasTag('hammer') ? 0.55 : 1),
       run: () => {
         if (!this.inventory.consume([{ id: 'wood', qty: 1 }, { id: 'nails', qty: 1 }])) return void this.hud.toast('Material fehlt.', 'warn');
         audio.wood(w.x, w.z);
@@ -2069,7 +2074,7 @@ export class Game {
         this.zombies.noise(p.x, p.z, s.w.noise);
         const wskill = this.weaponSkill(s.w);
         this.needs.add('energy', -s.w.energy * SKILL_FX.energy(this.skills.level('fitness')));
-        const res = swingAt(p.x, p.z, s.yaw, s.w, this.zombies.alive, Math.random, SKILL_FX.damage(this.skills.level(wskill)) * this.traitFx.damage);
+        const res = swingAt(p.x, p.z, s.yaw, s.w, this.zombies.alive, Math.random, SKILL_FX.damage(this.skills.level(wskill)) * this.traitFx.damage * this.talents.perks().melee);
         for (const h of res.hits) {
           const tp = (h.target as Zed).mesh.position;
           audio.hit(s.w.id === 'axe' || s.w.id === 'pipe' || s.w.id === 'bat', h.killed, tp.x, tp.z);
@@ -2389,6 +2394,7 @@ export class Game {
     applyBuild(b, this.skills);
     if (fresh) {
       this.level.reset();
+      this.talents.reset();
       if (b.look === 'dress') {
         this.inventory.wear('dress');
         this.inventory.add('hoodie', 1);
@@ -2407,7 +2413,7 @@ export class Game {
   /** Werte, die von Fertigkeiten und Eigenschaften abhängen */
   private refreshStats(): void {
     const lv = (id: SkillId) => this.skills.level(id);
-    this.inventory.carryLimit = 44 + this.traitFx.carry + SKILL_FX.carry(lv('strength'));
+    this.inventory.carryLimit = 44 + this.traitFx.carry + SKILL_FX.carry(lv('strength')) + this.talents.perks().carry;
     this.player.climbFactor = SKILL_FX.climb(lv('nimble'));
     this.needs.rates = { hunger: this.traitFx.hunger, thirst: this.traitFx.thirst, fatigue: this.traitFx.fatigue };
   }
@@ -2427,8 +2433,18 @@ export class Game {
     const up = this.level.add(amount);
     if (!up) return;
     audio.levelUp();
-    const fresh = RECIPES.filter((r) => (r.level ?? 1) === up).length;
-    this.hud.toast(`Charakterstufe ${up}!${fresh ? ` ${fresh} neue${fresh === 1 ? 's Rezept' : ' Rezepte'} freigeschaltet.` : ''}`, 'good');
+    const pts = pointsForLevel(up) - pointsForLevel(up - 1);
+    this.hud.toast(`Charakterstufe ${up}! +${pts} Talentpunkt${pts === 1 ? '' : 'e'} (Person → Talente)`, 'good');
+    this.refreshUis();
+  }
+
+  private unlockTalent(id: string): void {
+    const res = this.talents.unlock(id, this.level.level);
+    if (!res.ok) return void this.hud.toast(res.reason, 'warn');
+    audio.levelUp();
+    const t = talent(id)!;
+    this.hud.toast(`Talent: ${t.name}${t.recipes?.length ? ' – neue Rezepte' : ''}`, 'good');
+    this.refreshStats();
     this.refreshUis();
   }
 
@@ -2474,6 +2490,7 @@ export class Game {
       thermo: { skin: { ...this.thermo.skin }, wet: { ...this.thermo.wet } },
       skills: this.skills.toJSON(),
       level: this.level.toJSON(),
+      talents: this.talents.toJSON(),
       inventory: this.inventory.toJSON(),
       player: { ...pos, yaw: this.player.mesh.rotation.y },
       world: this.world.exportState(),
@@ -2503,6 +2520,7 @@ export class Game {
     if (b) this.applyCharacter({ ...DEFAULT_BUILD, ...b, traits: [...(b.traits ?? [])] }, false);
     const sk = o<Parameters<Skills['fromJSON']>[0]>('skills');
     if (sk) this.skills.fromJSON(sk);
+    this.talents.fromJSON(o<{ have: string[] }>('talents'));
     const lv = o<{ xp: number }>('level');
     if (lv) this.level.fromJSON(lv);
     else this.level.xp = SKILL_IDS.reduce((a, id) => a + this.skills.xpOf(id), 0); // alter Spielstand: bisherige Erfahrung zählt mit

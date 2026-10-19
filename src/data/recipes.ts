@@ -11,43 +11,36 @@ export interface Recipe {
   time?: number;
   /** Erfahrung, die das Herstellen bringt */
   xp?: { skill: SkillId; amount: number };
-  /** Charakterstufe, ab der das Rezept freigeschaltet ist (Standard 1) */
-  level?: number;
 }
 
 export const RECIPES: Recipe[] = [
-  { id: 'bandage', level: 1, inputs: [{ id: 'cloth', qty: 2 }], output: { id: 'bandage', qty: 1 }, time: 5, xp: { skill: 'firstaid', amount: 4 } },
-  { id: 'splint', level: 1, inputs: [{ id: 'wood', qty: 1 }, { id: 'cloth', qty: 2 }], output: { id: 'splint', qty: 1 }, time: 10, xp: { skill: 'firstaid', amount: 6 } },
-  { id: 'nails', level: 1, inputs: [{ id: 'scrap', qty: 1 }], output: { id: 'nails', qty: 6 }, tools: ['hammer'], time: 4, xp: { skill: 'carpentry', amount: 3 } },
-  { id: 'lockpick', level: 2, inputs: [{ id: 'scrap', qty: 1 }], output: { id: 'lockpick', qty: 2 }, tools: ['mechanic'], time: 8, xp: { skill: 'carpentry', amount: 4 } },
-  { id: 'hammer', level: 1, inputs: [{ id: 'scrap', qty: 2 }, { id: 'wood', qty: 1 }], output: { id: 'hammer', qty: 1 }, time: 10, xp: { skill: 'carpentry', amount: 6 } },
-  { id: 'sledgehammer', level: 5, inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 2 }, { id: 'nails', qty: 4 }], output: { id: 'sledgehammer', qty: 1 }, tools: ['hammer'], time: 18, xp: { skill: 'carpentry', amount: 10 } },
-  { id: 'sandwich', level: 1, inputs: [{ id: 'bread', qty: 1 }, { id: 'beans', qty: 1 }], output: { id: 'sandwich', qty: 1 }, time: 3, xp: { skill: 'cooking', amount: 6 } },
-  { id: 'knife', level: 3, inputs: [{ id: 'scrap', qty: 2 }, { id: 'wood', qty: 1 }], output: { id: 'knife', qty: 1 }, tools: ['hammer'], time: 12, xp: { skill: 'carpentry', amount: 8 } },
-  { id: 'suture', level: 4, inputs: [{ id: 'cloth', qty: 1 }, { id: 'scrap', qty: 1 }], output: { id: 'suture', qty: 1 }, time: 8, xp: { skill: 'firstaid', amount: 10 } },
-  { id: 'beanie', level: 4, inputs: [{ id: 'cloth', qty: 3 }], output: { id: 'beanie', qty: 1 }, time: 12 },
-  { id: 'cap', level: 4, inputs: [{ id: 'cloth', qty: 3 }, { id: 'scrap', qty: 1 }], output: { id: 'cap', qty: 1 }, time: 12 },
-  { id: 'bat', level: 5, inputs: [{ id: 'wood', qty: 3 }, { id: 'nails', qty: 4 }], output: { id: 'bat', qty: 1 }, tools: ['hammer'], time: 16, xp: { skill: 'carpentry', amount: 12 } },
-  { id: 'hoodie', level: 5, inputs: [{ id: 'cloth', qty: 6 }], output: { id: 'hoodie', qty: 1 }, time: 20 },
-  { id: 'disinfectant', level: 5, inputs: [{ id: 'water', qty: 1 }, { id: 'cloth', qty: 1 }], output: { id: 'disinfectant', qty: 1 }, time: 10, xp: { skill: 'firstaid', amount: 12 } },
-  { id: 'pipe', level: 6, inputs: [{ id: 'scrap', qty: 5 }], output: { id: 'pipe', qty: 1 }, tools: ['hammer'], time: 18, xp: { skill: 'carpentry', amount: 14 } },
-  { id: 'machete', level: 6, inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 1 }, { id: 'cloth', qty: 2 }], output: { id: 'machete', qty: 1 }, tools: ['hammer'], time: 22, xp: { skill: 'carpentry', amount: 16 } },
-  { id: 'jeans', level: 6, inputs: [{ id: 'cloth', qty: 8 }], output: { id: 'jeans', qty: 1 }, time: 24 },
-  { id: 'axe', level: 7, inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 3 }], output: { id: 'axe', qty: 1 }, tools: ['hammer'], time: 26, xp: { skill: 'carpentry', amount: 20 } },
-  { id: 'crowbar', level: 7, inputs: [{ id: 'scrap', qty: 6 }], output: { id: 'crowbar', qty: 1 }, tools: ['hammer'], time: 22, xp: { skill: 'carpentry', amount: 18 } },
-  { id: 'sweater', level: 7, inputs: [{ id: 'cloth', qty: 10 }], output: { id: 'sweater', qty: 1 }, time: 28 },
-  { id: 'schoolbag', level: 8, inputs: [{ id: 'cloth', qty: 12 }, { id: 'nails', qty: 4 }], output: { id: 'schoolbag', qty: 1 }, time: 30 },
-  { id: 'toolbox', level: 8, inputs: [{ id: 'scrap', qty: 8 }, { id: 'nails', qty: 6 }], output: { id: 'toolbox', qty: 1 }, tools: ['hammer'], time: 30, xp: { skill: 'mechanics', amount: 20 } },
-  { id: 'jacket', level: 10, inputs: [{ id: 'cloth', qty: 16 }, { id: 'scrap', qty: 2 }], output: { id: 'jacket', qty: 1 }, time: 40 },
-  { id: 'boots', level: 10, inputs: [{ id: 'cloth', qty: 8 }, { id: 'scrap', qty: 4 }], output: { id: 'boots', qty: 1 }, time: 36 },
-  { id: 'hikingpack', level: 12, inputs: [{ id: 'cloth', qty: 24 }, { id: 'scrap', qty: 6 }, { id: 'nails', qty: 6 }], output: { id: 'hikingpack', qty: 1 }, time: 50 },
+  { id: 'bandage', inputs: [{ id: 'cloth', qty: 2 }], output: { id: 'bandage', qty: 1 }, time: 5, xp: { skill: 'firstaid', amount: 4 } },
+  { id: 'splint', inputs: [{ id: 'wood', qty: 1 }, { id: 'cloth', qty: 2 }], output: { id: 'splint', qty: 1 }, time: 10, xp: { skill: 'firstaid', amount: 6 } },
+  { id: 'nails', inputs: [{ id: 'scrap', qty: 1 }], output: { id: 'nails', qty: 6 }, tools: ['hammer'], time: 4, xp: { skill: 'carpentry', amount: 3 } },
+  { id: 'lockpick', inputs: [{ id: 'scrap', qty: 1 }], output: { id: 'lockpick', qty: 2 }, tools: ['mechanic'], time: 8, xp: { skill: 'carpentry', amount: 4 } },
+  { id: 'hammer', inputs: [{ id: 'scrap', qty: 2 }, { id: 'wood', qty: 1 }], output: { id: 'hammer', qty: 1 }, time: 10, xp: { skill: 'carpentry', amount: 6 } },
+  { id: 'sledgehammer', inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 2 }, { id: 'nails', qty: 4 }], output: { id: 'sledgehammer', qty: 1 }, tools: ['hammer'], time: 18, xp: { skill: 'carpentry', amount: 10 } },
+  { id: 'sandwich', inputs: [{ id: 'bread', qty: 1 }, { id: 'beans', qty: 1 }], output: { id: 'sandwich', qty: 1 }, time: 3, xp: { skill: 'cooking', amount: 6 } },
+  { id: 'knife', inputs: [{ id: 'scrap', qty: 2 }, { id: 'wood', qty: 1 }], output: { id: 'knife', qty: 1 }, tools: ['hammer'], time: 12, xp: { skill: 'carpentry', amount: 8 } },
+  { id: 'suture', inputs: [{ id: 'cloth', qty: 1 }, { id: 'scrap', qty: 1 }], output: { id: 'suture', qty: 1 }, time: 8, xp: { skill: 'firstaid', amount: 10 } },
+  { id: 'beanie', inputs: [{ id: 'cloth', qty: 3 }], output: { id: 'beanie', qty: 1 }, time: 12 },
+  { id: 'cap', inputs: [{ id: 'cloth', qty: 3 }, { id: 'scrap', qty: 1 }], output: { id: 'cap', qty: 1 }, time: 12 },
+  { id: 'bat', inputs: [{ id: 'wood', qty: 3 }, { id: 'nails', qty: 4 }], output: { id: 'bat', qty: 1 }, tools: ['hammer'], time: 16, xp: { skill: 'carpentry', amount: 12 } },
+  { id: 'hoodie', inputs: [{ id: 'cloth', qty: 6 }], output: { id: 'hoodie', qty: 1 }, time: 20 },
+  { id: 'disinfectant', inputs: [{ id: 'water', qty: 1 }, { id: 'cloth', qty: 1 }], output: { id: 'disinfectant', qty: 1 }, time: 10, xp: { skill: 'firstaid', amount: 12 } },
+  { id: 'pipe', inputs: [{ id: 'scrap', qty: 5 }], output: { id: 'pipe', qty: 1 }, tools: ['hammer'], time: 18, xp: { skill: 'carpentry', amount: 14 } },
+  { id: 'machete', inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 1 }, { id: 'cloth', qty: 2 }], output: { id: 'machete', qty: 1 }, tools: ['hammer'], time: 22, xp: { skill: 'carpentry', amount: 16 } },
+  { id: 'jeans', inputs: [{ id: 'cloth', qty: 8 }], output: { id: 'jeans', qty: 1 }, time: 24 },
+  { id: 'axe', inputs: [{ id: 'scrap', qty: 4 }, { id: 'wood', qty: 3 }], output: { id: 'axe', qty: 1 }, tools: ['hammer'], time: 26, xp: { skill: 'carpentry', amount: 20 } },
+  { id: 'crowbar', inputs: [{ id: 'scrap', qty: 6 }], output: { id: 'crowbar', qty: 1 }, tools: ['hammer'], time: 22, xp: { skill: 'carpentry', amount: 18 } },
+  { id: 'sweater', inputs: [{ id: 'cloth', qty: 10 }], output: { id: 'sweater', qty: 1 }, time: 28 },
+  { id: 'schoolbag', inputs: [{ id: 'cloth', qty: 12 }, { id: 'nails', qty: 4 }], output: { id: 'schoolbag', qty: 1 }, time: 30 },
+  { id: 'toolbox', inputs: [{ id: 'scrap', qty: 8 }, { id: 'nails', qty: 6 }], output: { id: 'toolbox', qty: 1 }, tools: ['hammer'], time: 30, xp: { skill: 'mechanics', amount: 20 } },
+  { id: 'jacket', inputs: [{ id: 'cloth', qty: 16 }, { id: 'scrap', qty: 2 }], output: { id: 'jacket', qty: 1 }, time: 40 },
+  { id: 'boots', inputs: [{ id: 'cloth', qty: 8 }, { id: 'scrap', qty: 4 }], output: { id: 'boots', qty: 1 }, time: 36 },
+  { id: 'hikingpack', inputs: [{ id: 'cloth', qty: 24 }, { id: 'scrap', qty: 6 }, { id: 'nails', qty: 6 }], output: { id: 'hikingpack', qty: 1 }, time: 50 },
 ];
 
-/** Ab welcher Charakterstufe ein Bauteil hergestellt werden kann */
-const PIECE_LEVEL: Record<string, number> = {
-  workbench: 1, wall: 1, door: 1, fire: 1, chair: 1, crate: 2, table: 2, fence: 2, bed: 3,
-  barricade: 3, shelf: 3, windowwall: 4, windowbar: 4, cabinet: 6,
-};
 
 export type PieceKind = 'wall' | 'door' | 'bed' | 'fire' | 'windowwall' | 'barricade' | 'table' | 'shelf' | 'chair' | 'crate' | 'cabinet' | 'fence' | 'windowbar' | 'workbench';
 
@@ -83,14 +76,21 @@ export const PIECES: PieceDef[] = [
 
 /** Jedes Bauteil wird hergestellt (Herstellen-Reiter) und danach mit Rechtsklick gesetzt */
 for (const p of PIECES) {
-  RECIPES.push({ id: `piece_${p.id}`, inputs: p.cost, output: { id: `piece_${p.id}`, qty: 1 }, level: PIECE_LEVEL[p.id] ?? 1, time: p.time, xp: { skill: 'carpentry', amount: Math.round(p.time * 1.6) } });
+  RECIPES.push({ id: `piece_${p.id}`, inputs: p.cost, output: { id: `piece_${p.id}`, qty: 1 }, time: p.time, xp: { skill: 'carpentry', amount: Math.round(p.time * 1.6) } });
 }
 
-RECIPES.sort((a, b) => (a.level ?? 1) - (b.level ?? 1));
+/** Rezepte, die jeder von Anfang an kennt; alle anderen schaltet man im Talentbaum frei (siehe data/talents.ts) */
+export const START_RECIPES = new Set([
+  'bandage', 'splint', 'nails', 'hammer', 'sandwich',
+  'piece_workbench', 'piece_wall', 'piece_door', 'piece_fire', 'piece_chair',
+]);
 
-/** Stufe 1 kann man im Inventar herstellen, alles darüber nur an einer Werkbank (und ab der nötigen Charakterstufe) */
+/** Was man im Inventar herstellen kann; alles andere braucht eine Werkbank in der Nähe */
 export const BENCH_RANGE = 3.5;
-export const needsBench = (r: Recipe): boolean => (r.level ?? 1) > 1;
+export const needsBench = (r: Recipe): boolean => !START_RECIPES.has(r.id);
+
+/** Kennt der Spieler das Rezept? `unlocked`: Rezepte aus freigeschalteten Talenten */
+export const isKnown = (r: Recipe, unlocked: ReadonlySet<string>): boolean => START_RECIPES.has(r.id) || unlocked.has(r.id);
 
 /** Spielstunden Brenndauer pro Holz und Startvorrat */
 export const FUEL_PER_WOOD = 4;

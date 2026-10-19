@@ -31,6 +31,9 @@ const PLASTER_COLORS = [0xe0d8c6, 0xd0c8b8, 0xcfd3d6, 0xe3cfa8, 0xb9c4b0];
 const CONCRETE_COLORS = [0xb8b8b4, 0xa4a8ac, 0xc4c2ba, 0x9a9ea2];
 const DARK_BRICK_COLORS = [0xb89888, 0xa88878, 0xc0a090];
 const WOOD_COLORS = [0xffffff, 0xf0e2d4, 0xd8c6b4, 0xc4b09c];
+const STUCCO_COLORS = [0xf0e2b8, 0xe8c9a0, 0xe0b8a8, 0xd8d8c0, 0xc8d8d0, 0xf2f0e6];
+const CLINKER_COLORS = [0xffffff, 0xf4e6c8, 0xe0c8a0, 0xd0d0c8];
+const PANEL_COLORS = [0xc8c8c4, 0xd4d0c4, 0xb8bcc0, 0xcfc8b8];
 const STONE_COLORS = [0xffffff, 0xe4e0d8, 0xcfcac0, 0xd8d0c4];
 const TRIM_COLORS = [0xf2efe6, 0xe9e2d0, 0x4a3a2c, 0x2f4a3a, 0x30445a, 0x6a2a24];
 const AWNING_COLORS = [0xb83a3a, 0x2f6a4a, 0x2f4f7a, 0xc8962f, 0x6a3a6a];
@@ -58,7 +61,8 @@ const shrink = (r: Rect, m: number): Rect => ({ x0: r.x0 + m, x1: r.x1 - m, z0: 
 
 function styleColor(r: () => number, style: WallStyle): number {
   return pick(r, style === 'siding' ? SIDING_COLORS : style === 'brick' ? BRICK_COLORS : style === 'plaster' ? PLASTER_COLORS
-    : style === 'concrete' ? CONCRETE_COLORS : style === 'wood' ? WOOD_COLORS : style === 'stone' ? STONE_COLORS : DARK_BRICK_COLORS);
+    : style === 'concrete' ? CONCRETE_COLORS : style === 'wood' ? WOOD_COLORS : style === 'stone' ? STONE_COLORS
+    : style === 'stucco' ? STUCCO_COLORS : style === 'clinker' ? CLINKER_COLORS : style === 'panel' ? PANEL_COLORS : DARK_BRICK_COLORS);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -70,9 +74,9 @@ function windowState(r: () => number, ground: boolean, house: boolean, storefron
   if (storefront) return fortified ? (v < 0.7 ? 'boarded' : 'roll') : v < 0.34 ? 'glass' : v < 0.5 ? 'broken' : v < 0.72 ? 'boarded' : 'roll';
   if (ground) {
     if (fortified) return v < 0.8 ? 'boarded' : 'glass';
-    return v < 0.5 ? 'glass' : v < 0.64 ? 'broken' : v < 0.84 ? 'boarded' : house ? 'shutter' : 'glass';
+    return v < 0.42 ? 'glass' : v < 0.62 ? 'broken' : v < 0.84 ? 'boarded' : house ? 'shutter' : 'glass';
   }
-  return v < 0.72 ? 'glass' : v < 0.84 ? 'broken' : v < 0.94 ? 'boarded' : 'shutter';
+  return v < 0.62 ? 'glass' : v < 0.8 ? 'broken' : v < 0.93 ? 'boarded' : 'shutter';
 }
 
 interface WinStyle { w: number; h: number; sill: number; spacing: number }
@@ -847,23 +851,23 @@ export function makeBuilding(
     : r() < 0.4 ? 2 : 1;
   const floors = force?.copy?.floors ?? floors0;
   const w = force?.exact ? lot.w : kind === 'barn' ? Math.min(lot.w - 4, 15 + r() * 3)
-    : kind === 'industry' ? Math.max(14, lot.w - 2.5 - r() * 2)
+    : kind === 'industry' ? Math.max(14, lot.w - 4.5 - r() * 2)
     : kind === 'house' ? Math.min(lot.w - 3, 9 + r() * 6)
-    : Math.max(9.5, lot.w - 3 - r() * 2.5);
+    : Math.max(9.5, lot.w - 4.5 - r() * 2.5);
   const d = force?.exact ? lot.d : kind === 'barn' ? Math.min(lot.d - 4, 11 + r() * 3)
-    : kind === 'industry' ? Math.max(14, lot.d - 2.5 - r() * 2)
+    : kind === 'industry' ? Math.max(14, lot.d - 4.5 - r() * 2)
     : kind === 'house' ? Math.min(lot.d - 3, 9 + r() * 6)
-    : Math.max(9.5, lot.d - 3 - r() * 2.5);
-  const x = force?.exact ? lot.x : lx + lot.w / 2 + (r() - 0.5) * Math.max(0, lot.w - w - 1.6);
-  const z = force?.exact ? lot.z : lz + lot.d / 2 + (r() - 0.5) * Math.max(0, lot.d - d - 1.6);
+    : Math.max(9.5, lot.d - 4.5 - r() * 2.5);
+  const x = force?.exact ? lot.x : lx + lot.w / 2 + (r() - 0.5) * Math.max(0, lot.w - w - 3);
+  const z = force?.exact ? lot.z : lz + lot.d / 2 + (r() - 0.5) * Math.max(0, lot.d - d - 3);
   const style0: WallStyle = kind === 'barn' ? 'wood'
     : zone === 'farm' && kind === 'house' ? (r() < 0.75 ? 'wood' : 'stone')
-    : kind === 'house' ? (r() < 0.7 ? 'siding' : r() < 0.6 ? 'brick' : 'stone')
-    : kind === 'office' ? pick<WallStyle>(r, ['concrete', 'concrete', 'darkbrick', 'plaster', 'stone'])
+    : kind === 'house' ? pick<WallStyle>(r, ['siding', 'siding', 'brick', 'stucco', 'stucco', 'clinker', 'stone', 'darkbrick', 'plaster'])
+    : kind === 'office' ? pick<WallStyle>(r, ['concrete', 'concrete', 'darkbrick', 'plaster', 'stone', 'panel', 'panel'])
     : kind === 'industry' ? pick<WallStyle>(r, ['concrete', 'darkbrick', 'concrete'])
-    : kind === 'hotel' ? pick<WallStyle>(r, ['brick', 'plaster', 'stone'])
-    : kind === 'apartment' ? pick<WallStyle>(r, ['brick', 'darkbrick', 'plaster', 'brick', 'stone'])
-    : pick<WallStyle>(r, ['brick', 'plaster', 'siding', 'darkbrick', 'stone']);
+    : kind === 'hotel' ? pick<WallStyle>(r, ['brick', 'plaster', 'stone', 'stucco', 'clinker'])
+    : kind === 'apartment' ? pick<WallStyle>(r, ['brick', 'darkbrick', 'plaster', 'panel', 'panel', 'clinker', 'stucco', 'stone'])
+    : pick<WallStyle>(r, ['brick', 'plaster', 'siding', 'darkbrick', 'stone', 'stucco', 'clinker']);
   const style: WallStyle = force?.copy?.style ?? style0;
 
   // Etwa jedes sechste Büro im Zentrum ist ein Polizeirevier
@@ -1152,9 +1156,12 @@ export function dropPicturesAtWindows(b: BuildingSpec): void {
   });
 }
 
+/** Engste Gasse (m), in der Fenster noch zum Nachbarhaus zeigen dürfen; darunter schaut man nur gegen eine fremde Wand */
+export const MIN_WINDOW_GAP = 3.6;
+
 /**
- * Wo Häuser Wand an Wand stehen (Reihenhaus, Flügel eines L-Hauses), gibt es auf der gemeinsamen Wand keine Fenster
- * und keine Klimageräte: dahinter ist ja das Nachbarhaus.
+ * Wo Häuser Wand an Wand stehen (Reihenhaus, Flügel eines L-Hauses) oder nur eine schmale Gasse trennt,
+ * gibt es auf der Wand zum Nachbarn keine Fenster und keine Klimageräte: dahinter ist ja das Nachbarhaus.
  */
 export function pruneTouchingWalls(list: BuildingSpec[]): void {
   const line = (b: BuildingSpec, s: number): number => (s === 0 ? b.z + b.d / 2 : s === 1 ? b.z - b.d / 2 : s === 2 ? b.x + b.w / 2 : b.x - b.w / 2);
@@ -1164,7 +1171,9 @@ export function pruneTouchingWalls(list: BuildingSpec[]): void {
     for (const o of list) {
       if (a === o) continue;
       for (let s = 0; s < 4; s++) {
-        if (Math.abs(line(a, s) - line(o, opposite[s])) > 0.6) continue;
+        // Abstand der beiden Wände voneinander (negativ: sie überlappen leicht)
+        const gap = (line(o, opposite[s]) - line(a, s)) * (s === 0 || s === 2 ? 1 : -1);
+        if (gap < -0.6 || gap > MIN_WINDOW_GAP) continue;
         const [a0, a1] = span(a, s), [o0, o1] = span(o, opposite[s]);
         const lo = Math.max(a0, o0), hi = Math.min(a1, o1);
         if (hi - lo < 0.4) continue;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_MAX, PlayerLevel, levelFromXp, xpForLevel } from '../src/sim/Level';
-import { RECIPES } from '../src/data/recipes';
+import { pointsForLevel } from '../src/data/talents';
 
 describe('Charakterstufe', () => {
   it('startet auf Stufe 1 und steigt mit XP auf', () => {
@@ -21,10 +21,10 @@ describe('Charakterstufe', () => {
     expect(k.level).toBe(LEVEL_MAX);
   });
 
-  it('Rezepte sind nach Stufe sortiert und innerhalb der Maximalstufe', () => {
-    const lv = RECIPES.map((r) => r.level ?? 1);
-    expect([...lv].sort((a, b) => a - b)).toEqual(lv);
-    expect(Math.max(...lv)).toBeLessThanOrEqual(LEVEL_MAX);
-    expect(new Set(lv).size).toBeGreaterThan(5);
+  it('Talentpunkte wachsen mit der Stufe', () => {
+    expect(pointsForLevel(1)).toBe(0);
+    expect(pointsForLevel(2)).toBe(1);
+    expect(pointsForLevel(5)).toBe(4 + 2);
+    expect(pointsForLevel(LEVEL_MAX)).toBeGreaterThan(20);
   });
 });

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { glassTexture, normalMapOf, signTexture, textures } from './Textures';
+import { glassTexture, normalMapOf, signTexture, textures, wearTexture } from './Textures';
 import { farmTexture } from './FarmAssets';
 import { carMats } from './CarModel';
 import { applyXray } from './Xray';
@@ -151,6 +151,8 @@ export interface Mats {
   prop(color: number): THREE.MeshStandardMaterial;
   train(color: number): THREE.MeshStandardMaterial;
   sign(key: string): THREE.MeshBasicMaterial;
+  /** Verschleiß an Hauswänden (Graffiti, Risse, abgeplatzter Putz, Flecken), siehe wearTexture */
+  wear(key: string): THREE.MeshStandardMaterial;
   /** Stadtstraße ohne Linien (Weltkoordinaten-UV, 8 m) */
   street: THREE.MeshStandardMaterial;
   /** Gehwegplatten in Weltkoordinaten (2 m): keine Verzerrung bei gestreckten Streifen */
@@ -214,6 +216,7 @@ export function mats(): Mats {
   const props = new Map<number, THREE.MeshStandardMaterial>();
   const trains = new Map<number, THREE.MeshStandardMaterial>();
   const signs = new Map<string, THREE.MeshBasicMaterial>();
+  const wears = new Map<string, THREE.MeshStandardMaterial>();
   const decals = new Map<string, THREE.MeshStandardMaterial>();
   const st: StreetTex | null = streetTextures();
   const memo = <K, V>(m: Map<K, V>, k: K, make: () => V): V => {
@@ -300,8 +303,8 @@ export function mats(): Mats {
     wallStyle: (style, color) => memo(styleWalls, `${style}|${color}`, () => {
       if (style === 'wood') return std({ color, map: farmTexture('woodWall', true), roughness: 0.9 });
       const map = style === 'brick' || style === 'darkbrick' ? t.brick : style === 'siding' ? t.siding : style === 'concrete' ? t.concrete
-        : style === 'stone' ? t.stone : t.wall;
-      const k = style === 'siding' ? 1.2 : style === 'concrete' ? 1.6 : style === 'stone' ? 2.4 : 2.6;
+        : style === 'stone' ? t.stone : style === 'stucco' ? t.stucco : style === 'clinker' ? t.clinker : style === 'panel' ? t.panel : t.wall;
+      const k = style === 'siding' ? 1.2 : style === 'concrete' || style === 'panel' ? 1.6 : style === 'stone' ? 2.4 : 2.6;
       return std({ color, map, roughness: 0.88, ...n(map, k, 0.8) });
     }),
     wall: (color) => memo(walls, color, () => std({ color, map: t.wall, roughness: 0.85, ...n(t.wall, 2.5, 0.9) })),
@@ -316,6 +319,11 @@ export function mats(): Mats {
     manhole: std({ map: st?.manhole ?? null, metalness: 0.45, roughness: 0.65, ...n(st?.manhole ?? null, 3, 1) }),
     // Pfützen spiegeln (glatt), Verguss glänzt leicht
     decal: (name) => memo(decals, name, () => decal(st?.[name] ?? null, name === 'puddle' ? { roughness: 0.08, metalness: 0.2 } : name === 'tar' ? { roughness: 0.35 } : {})),
+    wear: (key) =>
+      memo(wears, key, () => new THREE.MeshStandardMaterial({
+        map: wearTexture(key), transparent: true, alphaTest: 0.04, roughness: 0.92, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      })),
     sign: (key) =>
       memo(signs, key, () => new THREE.MeshBasicMaterial({
         map: signTexture(key), transparent: true, alphaTest: 0.4, // FrontSide: Rückseite ist eine eigene Platte

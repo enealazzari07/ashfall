@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { paintAsphaltBase, tileNoise } from './StreetTextures';
+import { WearKind, drawClinker, drawPanel, drawStucco, drawWear } from './WallTextures';
 
 type Draw = (g: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -95,6 +96,9 @@ export interface Textures {
   carpet: THREE.CanvasTexture | null;
   concreteFloor: THREE.CanvasTexture | null;
   siding: THREE.CanvasTexture | null;
+  stucco: THREE.CanvasTexture | null;
+  clinker: THREE.CanvasTexture | null;
+  panel: THREE.CanvasTexture | null;
   concrete: THREE.CanvasTexture | null;
   metal: THREE.CanvasTexture | null;
   roof: THREE.CanvasTexture | null;
@@ -107,6 +111,16 @@ export interface Textures {
   plaster: THREE.CanvasTexture | null;
   /** Holzmaserung für Möbel (Graustufen, über die Vertexfarbe gelegt) */
   grain: THREE.CanvasTexture | null;
+}
+
+/** Verschleiß an Hauswänden (Graffiti, Risse, abgeplatzter Putz …), Schlüssel `wear:<Art>:<Variante>` */
+export function wearTexture(key: string): THREE.CanvasTexture | null {
+  if (signCache.has(key)) return signCache.get(key)!;
+  const [, kind, variant] = key.split(':');
+  const tex = make(256, 256, drawWear(kind as WearKind, Number(variant)));
+  if (tex) tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  signCache.set(key, tex);
+  return tex;
 }
 
 /** Schilder: einmalig gezeichnet und gecacht. Schlüssel: stop | cross | gantry | name:<Text> */
@@ -484,6 +498,10 @@ export function textures(): Textures {
       g.fillStyle = grad;
       g.fillRect(0, 0, w, h);
     }),
+
+    stucco: make(256, 192, drawStucco),
+    clinker: make(256, 192, drawClinker),
+    panel: make(256, 192, drawPanel),
 
     // Kachel 4 m x 3 m: Betonfertigteile mit Fugen und Wasserflecken
     concrete: make(256, 192, (g, w, h) => {

@@ -358,7 +358,64 @@ function buildSide(b: BuildingSpec, s: number, f: number, rand: (k: number) => (
     sign.rotation.y = Math.atan2(fr.nx, fr.nz);
     high.add(sign);
   }
+  addWear(b, s, f, fr, ops, rand(f * 1000 + s * 100 + 77), high);
   return { group, low, high, nx: fr.nx, nz: fr.nz, cut: 0 };
+}
+
+/** Wie stark ein Gebäude verwahrlost ist (0 = gepflegt .. 1 = verfallen), nur aus der Lage */
+export function wearLevel(b: { x: number; z: number; kind: string }): number {
+  const v = Math.abs(Math.sin(b.x * 91.3 + b.z * 47.7) * 43758.5453) % 1;
+  return b.kind === 'industry' || b.kind === 'garage' ? Math.min(1, v + 0.2) : v;
+}
+
+type WearKind = 'tag' | 'crack' | 'peel' | 'stain' | 'holes' | 'soot';
+const WEAR_SIZE: Record<WearKind, [number, number, number, number]> = {
+  // Breite min/max, Höhe min/max (m)
+  tag: [1.4, 2.6, 1.0, 1.7],
+  crack: [1.0, 1.6, 1.4, 2.2],
+  peel: [1.2, 2.1, 1.0, 1.7],
+  stain: [0.9, 1.5, 1.6, 2.4],
+  holes: [0.9, 1.4, 0.9, 1.4],
+  soot: [1.2, 1.9, 1.5, 2.2],
+};
+
+/**
+ * Graffiti, Risse, abgeplatzter Putz, Flecken und Einschüsse an der Außenwand. Wie viel, hängt vom Haus ab
+ * (manche sind gepflegt, andere verfallen); Tür und Fenster bleiben frei.
+ */
+function addWear(b: BuildingSpec, s: number, f: number, fr: SideFrame, ops: Opening[], rnd: () => number, to: THREE.Group): void {
+  const level = wearLevel(b);
+  if (level < 0.22 || fr.len < 2.4) return;
+  const M = mats();
+  const count = f === 0 ? (level < 0.5 ? 1 : level < 0.78 ? 2 : 3) : level > 0.6 ? 1 : 0;
+  const kinds: WearKind[] = f === 0
+    ? ['tag', 'tag', 'tag', 'crack', 'crack', 'peel', 'peel', 'stain', 'holes', 'soot']
+    : ['stain', 'stain', 'crack', 'peel', 'soot'];
+  const placed: { u0: number; u1: number; y0: number; y1: number }[] = [];
+  for (let n = 0; n < count; n++) {
+    const kind = kinds[Math.floor(rnd() * kinds.length)];
+    const [w0, w1, h0, h1] = WEAR_SIZE[kind];
+    const w = w0 + rnd() * (w1 - w0), h = h0 + rnd() * (h1 - h0);
+    for (let tries = 0; tries < 8; tries++) {
+      const room = fr.len - w - 0.5;
+      if (room <= 0) break;
+      const u = (rnd() - 0.5) * room;
+      const yc = kind === 'tag' || kind === 'holes' ? 0.8 + h / 2 + rnd() * 0.5 : kind === 'soot' ? 0.2 + h / 2 : h / 2 + 0.25 + rnd() * (FLOOR_H - h - 0.5);
+      const y0 = yc - h / 2, y1 = yc + h / 2;
+      if (y0 < 0.1 || y1 > FLOOR_H - 0.1) continue;
+      const hit = (r: { a0: number; a1: number; y0: number; y1: number }): boolean =>
+        r.a0 - 0.2 < u + w / 2 && r.a1 + 0.2 > u - w / 2 && r.y0 - 0.2 < y1 && r.y1 + 0.2 > y0;
+      if (ops.some(hit) || placed.some((p) => hit({ a0: p.u0, a1: p.u1, y0: p.y0, y1: p.y1 }))) continue;
+      placed.push({ u0: u - w / 2, u1: u + w / 2, y0, y1 });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.wear(`wear:${kind}:${Math.floor(rnd() * 12)}`));
+      plane.userData.ownGeo = true;
+      plane.position.set(fr.cx + fr.ax * u + fr.nx * (WALL / 2 + 0.014), yc, fr.cz + fr.az * u + fr.nz * (WALL / 2 + 0.014));
+      plane.rotation.y = Math.atan2(fr.nx, fr.nz);
+      plane.receiveShadow = true;
+      to.add(plane);
+      break;
+    }
+  }
 }
 
 export function buildFacade(b: BuildingSpec, index: number): Facade {

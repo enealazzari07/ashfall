@@ -139,7 +139,7 @@ export interface Partition {
 
 export type BuildingKind = 'house' | 'shop' | 'office' | 'apartment' | 'hotel' | 'industry' | 'garage' | 'barn';
 export type DoorStyle = 'wood' | 'panel' | 'window' | 'glass' | 'steel';
-export type WallStyle = 'brick' | 'darkbrick' | 'siding' | 'plaster' | 'concrete' | 'wood' | 'stone';
+export type WallStyle = 'brick' | 'darkbrick' | 'siding' | 'plaster' | 'concrete' | 'wood' | 'stone' | 'stucco' | 'clinker' | 'panel';
 export type WindowState = 'glass' | 'broken' | 'boarded' | 'shutter' | 'roll';
 
 export interface WindowSpec {
@@ -582,7 +582,7 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
           const hz = hash2(cx * 31 + i * 7 + 5, cz * 17 + j * 11 + 3);
           const fullLot: LotRect = { x: lx + LOT / 2, z: lz + LOT / 2, w: LOT, d: LOT };
           if (!split && !spawnLot && zone !== 'industrial') {
-            if (hz < 0.14) {
+            if (hz < 0.2) {
               // L-Haus: Flügel A an der Querstraße, Flügel B an der Längsstraße, dazwischen ein Durchgang
               const dA = 9.5 + hash2(cx * 5 + i, cz * 3 + j) * 2;
               const wB = 10 + hash2(cx * 3 + j, cz * 5 + i) * 3;

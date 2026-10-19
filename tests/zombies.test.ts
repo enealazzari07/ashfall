@@ -7,7 +7,7 @@ import { Health } from '../src/player/Health';
 import { Needs } from '../src/player/Needs';
 import { ZombieWorld, baseCount, chunkRng, populationFactor } from '../src/world/ZombieWorld';
 import { ChunkManager, climbTarget } from '../src/world/ChunkManager';
-import { generateChunk, rng } from '../src/world/CityGenerator';
+import { doorPlacement, generateChunk, rng } from '../src/world/CityGenerator';
 import { Explored, CELLS } from '../src/world/Explored';
 import { Mood } from '../src/sim/Mood';
 
@@ -505,7 +505,8 @@ describe('Türen', () => {
     // Wohngebäude mit massiver Tür (Büros und Läden haben Glastüren, die die Sicht nicht versperren)
     const b = generateChunk(0, 0).buildings.find((q) => q.kind === 'house' || q.kind === 'apartment')!;
     // die Tür des Hauses selbst (nicht irgendeine Tür der Umgebung)
-    const d = cm.doorsNear(b.x, b.z, 80).sort((p, q) => Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0];
+    const dp = doorPlacement(b);
+    const d = cm.doorsNear(b.x, b.z, 80).sort((p, q) => Math.hypot(p.x - dp.x, p.z - dp.z) - Math.hypot(q.x - dp.x, q.z - dp.z))[0];
     // von der Hausmitte zu einem Punkt weit hinter der Tür
     const out = { x: d.x + (d.x - b.x) * 3, z: d.z + (d.z - b.z) * 3 };
     expect(cm.lineClear(b.x, b.z, out.x, out.z, 0)).toBe(false);

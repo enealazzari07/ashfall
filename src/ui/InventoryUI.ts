@@ -15,11 +15,13 @@ import { TRAITS, trait } from '../data/traits';
 import { profession } from '../data/professions';
 import type { Skills } from '../sim/Skills';
 import { LEVEL_MAX, PlayerLevel } from '../sim/Level';
+import type { Talents } from '../sim/Talents';
+import { BRANCHES, TALENTS, TalentDef, pointsForLevel } from '../data/talents';
 import type { Build } from '../sim/Profile';
 import type { Container } from '../world/ChunkManager';
 import type { ToastKind } from './HUD';
 import { iconHtml } from '../render/Icons';
-import { PIECES, RECIPES, Recipe, missingFor, needsBench } from '../data/recipes';
+import { PIECES, RECIPES, Recipe, isKnown, missingFor, needsBench } from '../data/recipes';
 import { glyph } from './Glyphs';
 import { CharacterPreview } from './CharacterPreview';
 
@@ -35,6 +37,9 @@ export interface InventoryHooks {
   /** Fertigkeiten und Charakter */
   skills(): Skills;
   level(): PlayerLevel;
+  talents(): Talents;
+  /** Talent freischalten (kostet Talentpunkte) */
+  unlockTalent(id: string): void;
   /** Steht eine Werkbank in Reichweite? */
   nearBench(): boolean;
   build(): Build;
@@ -62,7 +67,7 @@ type PKind = 'main' | 'bag' | 'side';
 const isP = (k: string | undefined): k is PKind => k === 'main' || k === 'bag' || k === 'side';
 const WHERE_NAME: Record<PKind, string> = { main: 'Taschen', bag: 'Rucksack', side: 'Seitentaschen' };
 type SortBy = 'type' | 'name' | 'weight';
-type PlayerTab = 'char' | 'health';
+type PlayerTab = 'char' | 'skills' | 'talents' | 'body' | 'health';
 type LootTab = 'box' | 'ground' | 'build';
 
 interface Src {
@@ -341,6 +346,11 @@ export class InventoryUI {
       else this.ltab = v as LootTab;
       return this.refresh();
     }
+    const tn = t.closest<HTMLElement>('[data-talent]');
+    if (tn) {
+      this.h.unlockTalent(tn.dataset.talent!);
+      return this.refresh();
+    }
     const rc = t.closest<HTMLElement>('[data-recipe]');
     if (rc) {
       if (rc.classList.contains('no')) return;
@@ -352,7 +362,7 @@ export class InventoryUI {
     if (tr && !tr.disabled) {
       const part = tr.dataset.part as PartId, idx = Number(tr.dataset.i), action = tr.dataset.treat as TreatAction;
       const aid = this.h.skills().level('firstaid');
-      this.h.act(TREAT_NAME[action], TREAT_TIME[action] * SKILL_FX.treatTime(aid), () => {
+      this.h.act(TREAT_NAME[action], TREAT_TIME[action] * SKILL_FX.treatTime(aid) * this.h.talents().perks().treat, () => {
         const res = treat(this.h.health(), this.inv, part, idx, action, { doctor: aid });
         if (res.ok) this.h.xp('firstaid', action === 'stitch' ? 12 : action === 'splint' ? 9 : 6);
         this.h.toast(res.ok ? res.msg : res.reason, res.ok ? 'good' : 'warn');
@@ -442,7 +452,10 @@ export class InventoryUI {
     const scroll = w.list.scrollTop;
 
     w.tabs.innerHTML = [
-      tabBtn('char', 'body', 'Charakter', this.tab === 'char', false, 'Person'),
+      tabBtn('char', 'person', 'Person: Stufe, Beruf und Zustände', this.tab === 'char', false, 'Person'),
+      tabBtn('skills', 'book', 'Fertigkeiten', this.tab === 'skills', false, 'Skills'),
+      tabBtn('talents', 'star', `Talentbaum${this.freePoints() ? ` (${this.freePoints()} Punkte frei)` : ''}`, this.tab === 'talents', false, 'Talente'),
+      tabBtn('body', 'temp', 'Körpertemperatur und Befinden', this.tab === 'body', false, 'Körper'),
       tabBtn('health', 'health', 'Gesundheit', this.tab === 'health', false, 'Gesund'),
     ].join('');
 
@@ -466,7 +479,25 @@ export class InventoryUI {
       return;
     }
 
-    // Person: Werte, Eigenschaften, Fertigkeiten. Die Kleidung liegt links und rechts der Figur.
+    // Person: Stufe, Beruf, Zustände. Fertigkeiten, Talente und Körper haben eigene Reiter; die Kleidung liegt links und rechts der Figur.
+    const pages: Partial<Record<PlayerTab, [string, () => string]>> = {
+      skills: ['Fertigkeiten', () => this.skillsHtml()],
+      talents: ['Talentbaum', () => this.talentsHtml()],
+      body: ['Körper', () => `<h4>Körpertemperatur</h4><ul class="zones">${this.zonesHtml()}</ul><h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`],
+    };
+    const sub = pages[this.tab];
+    if (sub) {
+      w.title.textContent = sub[0];
+      w.sub.textContent = this.tab === 'talents' ? `${this.freePoints()} Punkte frei` : '';
+      w.sub.className = 'sub';
+      w.bar.style.display = 'none';
+      w.tools.style.display = w.foot.style.display = 'none';
+      w.list.classList.add('char');
+      w.list.classList.remove('bodyv');
+      w.list.innerHTML = sub[1]();
+      w.list.scrollTop = scroll;
+      return;
+    }
     w.title.textContent = 'Person';
     w.sub.textContent = '';
     w.bar.style.display = 'none';
@@ -542,31 +573,64 @@ export class InventoryUI {
     const moodHtml = moods.length
       ? moods.map((m) => `<li class="${moodleTone(m.level)}">${glyph(m.glyph)}<span>${m.label}</span><i>${'●'.repeat(m.level)}${'○'.repeat(4 - m.level)}</i></li>`).join('')
       : '<li class="ok"><span>Dir geht es gut.</span></li>';
+    const load = Math.round((inv.weight / inv.maxWeight) * 100);
     return `${doll ? this.dollHtml() : ''}
-      <dl class="stats">
-        <dt>Kälteschutz</dt><dd>${warmth} %</dd>
-        <dt>Tempo</dt><dd class="${speed < 100 ? 'warn' : ''}">${speed} %</dd>
-        <dt>Licht</dt><dd>${inv.hasLight ? 'Taschenlampe' : '–'}</dd>
+      ${this.buildHtml()}
+      ${this.levelHtml()}
+      <dl class="stats grid">
+        <div><dt>Kälteschutz</dt><dd>${warmth} %</dd></div>
+        <div><dt>Tempo</dt><dd class="${speed < 100 ? 'warn' : ''}">${speed} %</dd></div>
+        <div><dt>Last</dt><dd class="${load >= 100 ? 'warn' : ''}">${load} %</dd></div>
+        <div><dt>Licht</dt><dd>${inv.hasLight ? 'Lampe' : '–'}</dd></div>
       </dl>
-      <h4>Charakterstufe</h4>${this.levelHtml()}
-      <h4>Beruf und Eigenschaften</h4>${this.buildHtml()}
-      <h4>Fertigkeiten</h4>${this.skillsHtml()}
-      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>
-      <h4>Körpertemperatur</h4><ul class="zones">${this.zonesHtml()}</ul>
-      <h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`;
+      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>`;
   }
 
-  /** Stufe, Erfahrungsbalken und das nächste freizuschaltende Rezept */
+  private freePoints(): number {
+    return this.h.talents().free(this.h.level().level);
+  }
+
+  /** Stufe, Erfahrungsbalken und freie Talentpunkte */
   private levelHtml(): string {
     const lv = this.h.level();
     const l = lv.level;
-    const next = RECIPES.find((r) => (r.level ?? 1) > l);
-    const unlocked = RECIPES.filter((r) => (r.level ?? 1) <= l).length;
-    const info = l >= LEVEL_MAX ? 'Höchste Stufe erreicht' : `Noch ${lv.toNext} XP bis Stufe ${l + 1}`;
-    const hint = next ? `Ab Stufe ${next.level}: ${item(next.output.id).name}` : 'Alle Rezepte freigeschaltet';
+    const pts = this.freePoints();
+    const info = l >= LEVEL_MAX ? 'Höchste Stufe erreicht' : `${lv.toNext} XP bis Stufe ${l + 1}`;
+    const next = l >= LEVEL_MAX ? '' : pointsForLevel(l + 1) - pointsForLevel(l);
     return `<div class="lvl"><div class="lvl-n"><small>Stufe</small><b>${l}</b></div>
       <div class="lvl-b"><div class="xpbar"><i style="width:${Math.round(lv.progress * 100)}%"></i></div>
-      <span>${info}</span><span class="dim">${unlocked}/${RECIPES.length} Rezepte · ${hint}</span></div></div>`;
+      <span>${info}${next ? ` · +${next} Punkt${next === 1 ? '' : 'e'}` : ''}</span>
+      <button class="pts${pts ? ' has' : ''}" data-tab="talents" title="Zum Talentbaum">${pts ? `${pts} Talentpunkt${pts === 1 ? '' : 'e'} frei` : 'Keine Talentpunkte frei'}</button></div></div>`;
+  }
+
+  /** Talentbaum: je Beruf ein Zweig, Talente als Kacheln in Spalten und Reihen */
+  private talentsHtml(): string {
+    const t = this.h.talents();
+    const level = this.h.level().level;
+    const pts = t.free(level);
+    const head = `<p class="tl-intro">Jede Stufe gibt Talentpunkte (alle 5 Stufen 2 Bonuspunkte). Talente schalten Rezepte und Vorteile frei. Ein Talent braucht seine Vorgänger.</p>
+      <div class="tl-pts"><b>${pts}</b> frei · ${t.spent} ausgegeben · ${pointsForLevel(level)} gesamt</div>`;
+    const branches = BRANCHES.map((br) => {
+      const list = TALENTS.filter((x) => x.branch === br.id);
+      const got = list.filter((x) => t.has(x.id)).length;
+      const cells = list.map((x) => this.talentCell(x, t, level)).join('');
+      return `<section class="branch" style="--bc:${br.color}">
+        <header><b>${br.name}</b><span>${got}/${list.length}</span></header>
+        <p class="blurb">${br.blurb}</p>
+        <div class="tgrid">${cells}</div></section>`;
+    }).join('');
+    return head + branches;
+  }
+
+  private talentCell(x: TalentDef, t: Talents, level: number): string {
+    const have = t.has(x.id);
+    const can = t.canUnlock(x, level);
+    const state = have ? 'have' : can.ok ? 'can' : t.missing(x).length ? 'lock' : 'poor';
+    const names = (x.recipes ?? []).map((id) => item(RECIPES.find((r) => r.id === id)?.output.id ?? id).name);
+    const why = have ? 'Freigeschaltet' : can.ok ? 'Klicken zum Freischalten' : can.reason;
+    return `<button class="tnode ${state}" style="grid-column:${x.col + 1};grid-row:${x.row + 1}" ${state === 'can' ? `data-talent="${x.id}"` : ''} title="${why}">
+      <span class="tn">${x.name}</span><span class="tc">${have ? '✓' : `${x.cost} P`}</span>
+      <span class="td">${x.desc}</span>${names.length ? `<span class="tr">${names.join(', ')}</span>` : ''}</button>`;
   }
 
   private buildHtml(): string {
@@ -616,20 +680,29 @@ export class InventoryUI {
       .join('');
   }
 
-  /** Herstellen-Reiter: Rezepte (mit fehlenden Werkzeugen und Zutaten), auch für Bauteile */
+  /** Gruppe eines Rezepts in der Liste */
+  private recipeGroup(r: Recipe): string {
+    const d = item(r.output.id);
+    if (d.piece) return 'Bauteile';
+    if (d.category === 'gear') return d.equip?.slot === 'hand' ? 'Waffen und Werkzeug' : 'Kleidung und Rucksäcke';
+    if (d.category === 'medical') return 'Medizin';
+    if (d.category === 'food' || d.category === 'drink') return 'Essen';
+    return 'Material und Sonstiges';
+  }
+
+  /** Herstellen-Reiter: alles, was man kennt (Grundrezepte und freigeschaltete Talente), nach Gruppen */
   private craftPage(): string {
     const inv = this.inv;
-    const myLevel = this.h.level().level;
     const bench = this.h.nearBench();
-    let lastLevel = 0;
-    const rows = RECIPES.map((r) => {
-      const need = r.level ?? 1;
-      const locked = need > myLevel;
+    const unlocked = this.h.talents().knownRecipes();
+    const known = RECIPES.filter((r) => isKnown(r, unlocked));
+    const order = ['Bauteile', 'Waffen und Werkzeug', 'Kleidung und Rucksäcke', 'Medizin', 'Essen', 'Material und Sonstiges'];
+    const groups = new Map<string, Recipe[]>(order.map((g) => [g, []]));
+    for (const r of known) groups.get(this.recipeGroup(r))!.push(r);
+    const row = (r: Recipe): string => {
       const miss = missingFor(r, inv);
-      const noBench = !locked && needsBench(r) && !bench;
-      const ok = !locked && !noBench && !miss.length && inv.canSwap(r.inputs, r.output);
-      const head = need !== lastLevel ? `<div class="sect lvlhead ${locked ? 'locked' : ''}">Stufe ${need}${locked ? ' · gesperrt' : ''}</div>` : '';
-      lastLevel = need;
+      const noBench = needsBench(r) && !bench;
+      const ok = !noBench && !miss.length && inv.canSwap(r.inputs, r.output);
       const out = item(r.output.id);
       const needTxt = r.inputs
         .map((i) => {
@@ -638,12 +711,17 @@ export class InventoryUI {
         })
         .join(' + ');
       const tools = (r.tools ?? []).map((tg) => `<span class="${inv.hasTag(tg) ? 'have' : 'miss'}">Werkzeug: ${TOOL_NAME[tg] ?? tg}</span>`).join(' ');
-      return `${head}<div class="recipe row2 ${ok ? '' : 'no'} ${locked ? 'locked' : ''}" data-recipe="${r.id}" title="${locked ? `Ab Charakterstufe ${need}` : noBench ? 'Werkbank nötig' : ok ? 'Herstellen' : 'Dir fehlt etwas'}">
+      return `<div class="recipe row2 ${ok ? '' : 'no'}" data-recipe="${r.id}" title="${noBench ? 'Dafür brauchst du eine Werkbank in der Nähe' : ok ? 'Herstellen' : 'Dir fehlt etwas'}">
         <span class="ic">${iconHtml(out.id, 'ico')}</span>
-        <div><div class="nm">${out.name}${r.output.qty > 1 ? ` ×${r.output.qty}` : ''}${locked ? ` <em class="lock">Stufe ${need}</em>` : noBench ? ' <em class="lock">Werkbank</em>' : ''}</div><div class="req">${needTxt}${tools ? ` · ${tools}` : ''}</div></div></div>`;
-    }).join('');
-    return `<div class="sect">Herstellen · Stufe ${myLevel}</div>${rows}
-      <div class="hint">Stufe 1 stellst du hier im Inventar her. Alles ab Stufe 2 brauchst du eine Werkbank in der Nähe (Werkbank unten herstellen und setzen) und die passende Charakterstufe. Bauteile (Wand, Tür, Tisch, Kiste …) werden hier hergestellt, landen auf der Schnellleiste und werden mit der Zahltaste in die Hand genommen. Rechtsklick setzt sie, R dreht, Esc beendet. Wieder einpacken: Hammer, Axt oder Brecheisen in die Hand, Rechtsklick. Zimmerwände schlägst du mit Hammer oder Vorschlaghammer ein.</div>`;
+        <div><div class="nm">${out.name}${r.output.qty > 1 ? ` ×${r.output.qty}` : ''}${noBench ? ' <em class="lock">Werkbank</em>' : ''}</div><div class="req">${needTxt}${tools ? ` · ${tools}` : ''}</div></div></div>`;
+    };
+    const rows = order
+      .filter((g) => groups.get(g)!.length)
+      .map((g) => `<div class="sect">${g}</div>${groups.get(g)!.map(row).join('')}`)
+      .join('');
+    const more = RECIPES.length - known.length;
+    return `${rows}
+      <div class="hint">${more ? `<b>${more} weitere Rezepte</b> schaltest du im Talentbaum frei (Person → Talente). ` : 'Du kennst alle Rezepte. '}Alles außer den Grundrezepten stellst du an einer Werkbank her. Bauteile landen auf der Schnellleiste, Rechtsklick setzt sie, R dreht, Esc beendet. Wieder einpacken: Hammer, Axt oder Brecheisen in die Hand, Rechtsklick.</div>`;
   }
 
   /** Gesundheits-Reiter: Körperteile mit Wunden, darunter die Wunden des gewählten Teils mit Behandlungen. */
