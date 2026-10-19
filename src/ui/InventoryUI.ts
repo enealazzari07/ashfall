@@ -16,6 +16,7 @@ import { profession } from '../data/professions';
 import type { Skills } from '../sim/Skills';
 import { LEVEL_MAX, PlayerLevel } from '../sim/Level';
 import type { Talents } from '../sim/Talents';
+import { TalentUI } from './TalentUI';
 import { pointsForLevel } from '../data/talents';
 import type { Build } from '../sim/Profile';
 import type { Container } from '../world/ChunkManager';
@@ -38,8 +39,8 @@ export interface InventoryHooks {
   skills(): Skills;
   level(): PlayerLevel;
   talents(): Talents;
-  /** Talentbaum-Fenster öffnen */
-  openTalents(): void;
+  /** Talent freischalten (kostet Talentpunkte) */
+  unlockTalent(id: string): void;
   /** Steht eine Werkbank in Reichweite? */
   nearBench(): boolean;
   build(): Build;
@@ -158,6 +159,10 @@ export class InventoryUI {
   /** Kopfleiste (Navigation, Last, Münzen, Stufe) und Kategorie-Symbole */
   private top = document.createElement('div');
   private cats = document.createElement('div');
+  private stage = document.createElement('div');
+  private tpage: TalentUI;
+  /** Seite des Inventars: Gegenstände oder Talentbaum */
+  private page: 'inv' | 'talents' = 'inv';
   private hotWrap = document.createElement('div');
   private st = { me: newState(), loot: newState(), pack: newState() };
   private drag: Drag | null = null;
@@ -168,6 +173,7 @@ export class InventoryUI {
     this.loot = this.makeWin('loot');
     this.pack = this.makePack();
     this.me = this.makeWin('me');
+    this.tpage = new TalentUI({ talents: () => this.h.talents(), level: () => this.h.level(), skills: () => this.h.skills(), unlock: (id) => this.h.unlockTalent(id) });
     this.fig.className = 'eqpanel';
     this.eqGrid.className = 'eq2';
     this.hotWrap.className = 'hotwrap';
@@ -183,7 +189,7 @@ export class InventoryUI {
     const center = document.createElement('div');
     center.className = 'pvwrap';
     center.append(this.prev.el);
-    const stage = document.createElement('div');
+    const stage = this.stage;
     stage.className = 'stage';
     stage.append(left, this.fig, center, this.me.root);
     const hints = document.createElement('div');
@@ -191,7 +197,7 @@ export class InventoryUI {
     hints.innerHTML = [
       ['2×', 'Benutzen / Aufnehmen'], ['⇧', 'Verschieben'], ['↔', 'Ziehen: Ablegen oder Umpacken'], ['R', 'Rechtsklick: Menü'], ['Esc', 'Schließen'],
     ].map(([k, t]) => `<span><kbd>${k}</kbd>${t}</span>`).join('');
-    this.root.append(this.top, stage, hints);
+    this.root.append(this.top, stage, this.tpage.el, hints);
     this.hotEl.id = 'hotbar';
     this.tip.id = 'itip';
     this.tip.className = 'panel';
@@ -235,10 +241,23 @@ export class InventoryUI {
   showContainer(c: Container | null): void {
     this.container = c;
     this.ltab = c && c.kind !== -1 ? 'box' : 'ground';
+    this.page = 'inv';
     this.open = true;
     this.hotWrap.append(this.hotEl); // Schnellleiste liegt im offenen Inventar unter der Figur
     this.root.classList.add('on');
     this.prev.start();
+    this.refresh();
+  }
+
+  /** Talentseite öffnen oder, wenn sie schon offen ist, das Inventar schließen */
+  toggleTalents(): void {
+    if (this.open && this.page === 'talents') return this.closeAll();
+    this.openTalents();
+  }
+
+  openTalents(): void {
+    if (!this.open) this.showContainer(null);
+    this.page = 'talents';
     this.refresh();
   }
 
@@ -254,7 +273,8 @@ export class InventoryUI {
     document.body.append(this.hotEl);
     this.container = null;
     this.open = false;
-    this.root.classList.remove('on');
+    this.page = 'inv';
+    this.root.classList.remove('on', 'talents', 'craftmode');
     this.prev.stop();
     this.hideTip();
     this.hideMenu();
@@ -264,6 +284,13 @@ export class InventoryUI {
   refresh(): void {
     this.renderHotbar();
     if (!this.open) return;
+    this.root.classList.toggle('talents', this.page === 'talents');
+    this.root.classList.toggle('craftmode', this.page === 'inv' && this.ltab === 'build');
+    if (this.page === 'talents') {
+      this.renderTop();
+      this.tpage.render();
+      return;
+    }
     this.prev.setOutfit(this.inv.equipment);
     this.renderTop();
     this.renderEquip();
@@ -362,17 +389,16 @@ export class InventoryUI {
       else this.ltab = v as LootTab;
       return this.refresh();
     }
-    if (t.closest('[data-open-talents]')) return this.h.openTalents();
+    if (t.closest('[data-open-talents]')) return this.openTalents();
     const nv = t.closest<HTMLElement>('[data-nav]');
     if (nv) {
       const id = nv.dataset.nav;
-      if (id === 'talents') return this.h.openTalents();
-      if (id === 'build') this.ltab = 'build';
+      if (id === 'talents') this.page = 'talents';
       else {
-        if (this.ltab === 'build') this.ltab = this.container && this.container.kind !== -1 ? 'box' : 'ground';
-        this.tab = id === 'health' ? 'health' : 'char';
+        this.page = 'inv';
+        if (id === 'build') this.ltab = 'build';
+        else if (this.ltab === 'build') this.ltab = this.container && this.container.kind !== -1 ? 'box' : 'ground';
       }
-      if (id === 'build') this.tab = 'char';
       return this.refresh();
     }
     const ct = t.closest<HTMLElement>('[data-cat]');
@@ -474,37 +500,23 @@ export class InventoryUI {
     const w = this.me;
     const scroll = w.list.scrollTop;
 
-    w.tabs.innerHTML = [
-      tabBtn('char', 'person', 'Person: Stufe, Fertigkeiten und Zustände', this.tab === 'char', false, 'Person'),
-      tabBtn('health', 'health', 'Gesundheit', this.tab === 'health', false, 'Gesund'),
-    ].join('');
+    w.tabs.innerHTML = '';
 
     // Körpertaschen gibt es nicht mehr: nur alte Spielstände können dort noch etwas liegen haben
     const legacy = inv.list('main').length > 0;
-    const showList = this.tab === 'char' && legacy;
+    const showList = legacy;
     w.bar.style.display = '';
     w.tools.style.display = w.foot.style.display = showList ? '' : 'none';
     w.list.dataset.drop = 'bag';
     w.list.classList.toggle('char', !showList);
     w.list.classList.toggle('bodyv', showList);
 
-    if (this.tab === 'health') {
-      const hp = this.h.health().hp;
-      w.title.textContent = 'Gesundheit';
-      w.sub.textContent = `${Math.round(hp)} / 100`;
-      w.sub.className = `sub ${hp <= 15 ? 'full' : hp <= 40 ? 'heavy' : ''}`;
-      w.bar.style.display = 'none';
-      w.list.innerHTML = this.healthPage();
-      w.list.scrollTop = scroll;
-      return;
-    }
-
     // Person: Beruf, Stufe, Werte, Fertigkeiten und Zustände. Die Kleidung liegt links und rechts der Figur.
     w.title.textContent = 'Person';
     w.sub.textContent = '';
     w.bar.style.display = 'none';
     const old = legacy ? `<div class="sect">Übrig geblieben · ${inv.rawWeight('main').toFixed(1)} kg</div>${this.rows(inv.list('main'), 'main', this.st.me)}` : '';
-    w.list.innerHTML = `${old}${this.charPage(false)}`;
+    w.list.innerHTML = `${old}${this.charPage(false)}<h4>Gesundheit</h4>${this.healthPage()}<h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`;
     w.list.scrollTop = scroll;
     if (legacy) syncTools(w, this.st.me);
     const target = this.lootTarget().name;
@@ -526,10 +538,10 @@ export class InventoryUI {
   /** Kopfleiste: Navigation links, Last, Münzen und Stufe rechts */
   private renderTop(): void {
     const lv = this.h.level();
-    const mode = this.tab === 'health' ? 'health' : this.ltab === 'build' ? 'build' : 'inv';
+    const mode = this.page === 'talents' ? 'talents' : this.ltab === 'build' ? 'build' : 'inv';
     const nav = (id: string, label: string, on: boolean): string => `<button class="nav${on ? ' on' : ''}" data-nav="${id}">${label}</button>`;
     const pct = Math.round(lv.progress * 100);
-    this.top.innerHTML = `<nav>${nav('inv', 'Inventar', mode === 'inv')}${nav('build', 'Herstellen', mode === 'build')}${nav('talents', 'Talente', false)}${nav('health', 'Gesundheit', mode === 'health')}</nav>
+    this.top.innerHTML = `<nav>${nav('inv', 'Inventar', mode === 'inv')}${nav('build', 'Herstellen', mode === 'build')}${nav('talents', 'Talente', mode === 'talents')}</nav>
       <div class="stats">
         <span class="st-w" title="Last">${glyph('weight')}<b>${this.inv.weight.toFixed(0)}</b>/${this.inv.maxWeight}</span>
         <span class="st-c" title="Münzen">${glyph('coin')}<b>${this.inv.count(COIN)}</b></span>
@@ -613,26 +625,22 @@ export class InventoryUI {
         <div class="tile ${speed < 100 ? 'warn' : ''}"><small>Tempo</small><b>${speed} %</b><i>${speed < 100 ? 'gebremst' : 'normal'}</i></div>
         <div class="tile ${load >= 100 ? 'warn' : ''}"><small>Last</small><b>${load} %</b><i>${inv.weight.toFixed(1)} kg</i></div>
       </div>
-      <h4>Fertigkeiten</h4>${this.skillsHtml()}
-      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>
-      <h4>Befinden</h4><ul class="zones feel">${this.feelHtml()}</ul>`;
+      <h4>Zustände</h4><ul class="moods">${moodHtml}</ul>`;
   }
 
   private freePoints(): number {
     return this.h.talents().free(this.h.level().level);
   }
 
-  /** Stufe als Ring mit Erfahrung, daneben die Talentpunkte und der Knopf zum Talentbaum */
+  /** Stufe als Ring mit Erfahrung, daneben der Knopf zur Talentseite */
   private levelHtml(): string {
     const lv = this.h.level();
     const l = lv.level;
     const pts = this.freePoints();
-    const info = l >= LEVEL_MAX ? 'Höchste Stufe erreicht' : `${lv.toNext} XP bis Stufe ${l + 1}`;
-    const next = l >= LEVEL_MAX ? 0 : pointsForLevel(l + 1) - pointsForLevel(l);
     const C = 2 * Math.PI * 26;
     return `<div class="lvl"><div class="ring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" class="bg"/><circle cx="32" cy="32" r="26" class="fg" stroke-dasharray="${(C * lv.progress).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/></svg><div><small>Stufe</small><b>${l}</b></div></div>
-      <div class="lvl-b"><span class="lx">${info}${next ? ` · nächste Stufe +${next} Punkt${next === 1 ? '' : 'e'}` : ''}</span>
-      <button class="pts${pts ? ' has' : ''}" data-open-talents title="Talentbaum (T)"><span>Talentbaum</span><em>${pts ? `${pts} Punkt${pts === 1 ? '' : 'e'} frei` : 'keine Punkte frei'}</em></button></div></div>`;
+      <div class="lvl-b"><span class="lx">${l >= LEVEL_MAX ? 'Höchste Stufe erreicht' : `${lv.toNext} XP bis Stufe ${l + 1}`}</span>
+      <button class="pts${pts ? ' has' : ''}" data-open-talents title="Talente und Fertigkeiten (T)"><span>Talente</span><em>${pts ? `${pts} frei` : ''}</em></button></div></div>`;
   }
 
   private buildHtml(): string {
@@ -642,20 +650,6 @@ export class InventoryUI {
       return `<span class="chip ${t.cost < 0 ? 'warn' : 'good'}" title="${t.desc}">${t.name}</span>`;
     }).join('');
     return `<p class="who"><b>${b.name}</b> · ${profession(b.profession).name}</p><div class="chips">${chips || '<span class="chip">Keine besonderen Eigenschaften</span>'}</div>`;
-  }
-
-  /** Fertigkeiten als Kacheln: Stufe groß, zehn Segmente, das nächste füllt sich mit der Erfahrung */
-  private skillsHtml(): string {
-    const sk = this.h.skills();
-    const groups = [...new Set(SKILLS.map((x) => x.group))];
-    return groups.map((g) => {
-      const cards = SKILLS.filter((x) => x.group === g).map((x) => {
-        const lvl = sk.level(x.id);
-        const seg = Array.from({ length: MAX_LEVEL }, (_, i) => `<u class="${i < lvl ? 'on' : i === lvl ? 'cur' : ''}"${i === lvl ? ` style="--f:${Math.round(sk.progress(x.id) * 100)}%"` : ''}></u>`).join('');
-        return `<div class="sk${lvl >= MAX_LEVEL ? ' max' : ''}" title="${x.perk}"><div class="skt"><span>${x.name}</span><b>${lvl}</b></div><div class="seg">${seg}</div></div>`;
-      }).join('');
-      return `<h5>${g}</h5><div class="skgrid">${cards}</div>`;
-    }).join('');
   }
 
   private zonesHtml(): string {
@@ -724,7 +718,7 @@ export class InventoryUI {
       .join('');
     const more = RECIPES.length - known.length;
     return `${rows}
-      <div class="hint">${more ? `<b>${more} weitere Rezepte</b> schaltest du im Talentbaum frei (Person → Talente). ` : 'Du kennst alle Rezepte. '}Alles außer den Grundrezepten stellst du an einer Werkbank her. Bauteile landen auf der Schnellleiste, Rechtsklick setzt sie, R dreht, Esc beendet. Wieder einpacken: Hammer, Axt oder Brecheisen in die Hand, Rechtsklick.</div>`;
+      <div class="hint">${more ? `<b>${more} weitere Rezepte</b> schaltest du auf der Seite Talente frei. ` : 'Du kennst alle Rezepte. '}Alles außer den Grundrezepten stellst du an einer Werkbank her. Bauteile landen auf der Schnellleiste, Rechtsklick setzt sie, R dreht, Esc beendet. Wieder einpacken: Hammer, Axt oder Brecheisen in die Hand, Rechtsklick.</div>`;
   }
 
   /** Gesundheits-Reiter: Körperteile mit Wunden, darunter die Wunden des gewählten Teils mit Behandlungen. */

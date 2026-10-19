@@ -2,34 +2,40 @@ import './talents.css';
 import { BRANCHES, TALENTS, TalentDef, pointsForLevel, talent } from '../data/talents';
 import { RECIPES } from '../data/recipes';
 import { item } from '../data/items';
+import { MAX_LEVEL, SKILLS } from '../data/skills';
+import { LEVEL_MAX } from '../sim/Level';
 import { iconURL } from '../render/Icons';
 import type { Talents } from '../sim/Talents';
 import type { PlayerLevel } from '../sim/Level';
+import type { Skills } from '../sim/Skills';
 
 export interface TalentHooks {
   talents(): Talents;
   level(): PlayerLevel;
+  skills(): Skills;
   unlock(id: string): void;
 }
 
 const NODE_DX = 118, NODE_DY = 112, R = 38;
 const COLS = 3;
 const CLUSTER_W = 3 * NODE_DX + 70;
-const TOP = 70;
+const TOP = 30;
 /** Reihen je Zweig bestimmen die Höhe der Zeile von Gruppen */
 const rowsOf = (branch: string): number => 1 + Math.max(...TALENTS.filter((t) => t.branch === branch).map((t) => t.row));
 
 /** Perk-Symbole für Talente ohne Rezept */
 const PERK_GLYPH: Record<string, string> = { build: '⚒', mechTime: '⚙', repair: '⚙', treat: '✚', carry: '⇧', melee: '⚔' };
 
-/** Großes Fenster mit dem Talentbaum (Taste T): sechs Zweige aus Sechsecken, verbunden wie in einem Skillbaum. */
+/**
+ * Talentseite: eine ganze Seite des Inventars (die Kopfleiste bleibt, darüber kommt man zurück). Links der Baum aus
+ * Sechsecken mit Beschreibung darunter, rechts Stufe, Talentpunkte und die Fertigkeiten.
+ */
 export class TalentUI {
-  private el = document.createElement('div');
+  readonly el = document.createElement('div');
   private sel: string | null = null;
 
   constructor(private h: TalentHooks) {
-    this.el.id = 'talents';
-    document.body.append(this.el);
+    this.el.className = 'tpage';
     this.el.addEventListener('click', (e) => this.onClick(e));
     this.el.addEventListener('dblclick', (e) => {
       const n = (e.target as HTMLElement).closest<HTMLElement>('[data-talent]');
@@ -44,18 +50,8 @@ export class TalentUI {
     });
   }
 
-  get isOpen(): boolean {
-    return this.el.classList.contains('on');
-  }
-
-  toggle(force?: boolean): void {
-    this.el.classList.toggle('on', force ?? !this.isOpen);
-    if (this.isOpen) this.refresh();
-  }
-
   private onClick(e: MouseEvent): void {
     const t = e.target as HTMLElement;
-    if (t.closest('[data-close]') || t === this.el) return this.toggle(false);
     const un = t.closest<HTMLElement>('[data-unlock]');
     if (un) return this.h.unlock(un.dataset.unlock!);
     const n = t.closest<HTMLElement>('[data-talent]');
@@ -65,22 +61,20 @@ export class TalentUI {
     }
   }
 
-  refresh(): void {
-    if (!this.isOpen) return;
+  render(): void {
     const lv = this.h.level();
     const tl = this.h.talents();
-    const free = tl.free(lv.level);
-    const w = COLS * CLUSTER_W + 40;
+    const w = COLS * CLUSTER_W + 20;
     const rowH = [0, 1].map((r) => Math.max(...BRANCHES.filter((_, i) => Math.floor(i / COLS) === r).map((b) => rowsOf(b.id))));
-    const y0s = [TOP, TOP + 70 + rowH[0] * NODE_DY + 50];
-    const hh = y0s[1] + 70 + rowH[1] * NODE_DY + 30;
+    const y0s = [TOP, TOP + 70 + rowH[0] * NODE_DY + 40];
+    const hh = y0s[1] + 70 + rowH[1] * NODE_DY + 20;
 
     const pos = new Map<string, { x: number; y: number }>();
     const parts: string[] = [];
     const lines: string[] = [];
     const nodes: string[] = [];
     BRANCHES.forEach((b, i) => {
-      const cx0 = 40 + (i % COLS) * CLUSTER_W, cy0 = y0s[Math.floor(i / COLS)];
+      const cx0 = 10 + (i % COLS) * CLUSTER_W, cy0 = y0s[Math.floor(i / COLS)];
       const list = TALENTS.filter((t) => t.branch === b.id);
       const got = list.filter((t) => tl.has(t.id)).length;
       parts.push(`<text class="bt" x="${cx0 + CLUSTER_W / 2 - 20}" y="${cy0 + 6}" text-anchor="middle" fill="${b.color}">${b.name.toUpperCase()}</text>
@@ -97,16 +91,38 @@ export class TalentUI {
       }
       nodes.push(this.nodeSvg(t, p.x, p.y, tl, lv.level));
     }
-    this.el.innerHTML = `<div class="tw">
-      <header>
-        <div><h2>Talentbaum</h2><p>Jede Stufe bringt Talentpunkte, alle 5 Stufen 2 Bonuspunkte. Talente schalten Rezepte und Vorteile frei.</p></div>
-        <div class="shards"><span>Talentpunkte</span><b>${free}</b><small>${tl.spent} ausgegeben · ${pointsForLevel(lv.level)} bisher · Stufe ${lv.level}</small></div>
-        <button class="x" data-close title="Schließen (Esc)">✕</button>
-      </header>
-      <div class="tmap"><svg viewBox="0 0 ${w} ${hh}" preserveAspectRatio="xMidYMid meet">${parts.join('')}${lines.join('')}${nodes.join('')}</svg></div>
-      <div class="tdetail"></div></div>`;
+    this.el.innerHTML = `<div class="tp-main">
+        <div class="tmap"><svg viewBox="0 0 ${w} ${hh}" preserveAspectRatio="xMidYMid meet">${parts.join('')}${lines.join('')}${nodes.join('')}</svg></div>
+        <div class="tdetail"></div>
+      </div>
+      <aside class="tp-side">${this.sideHtml()}</aside>`;
     if (!this.sel || !talent(this.sel)) this.sel = TALENTS.find((t) => tl.canUnlock(t, lv.level).ok)?.id ?? TALENTS[0].id;
     this.renderDetail();
+  }
+
+  /** Rechts: Stufe, Talentpunkte, Fertigkeiten */
+  private sideHtml(): string {
+    const lv = this.h.level();
+    const tl = this.h.talents();
+    const free = tl.free(lv.level);
+    const C = 2 * Math.PI * 26;
+    const next = lv.level >= LEVEL_MAX ? 0 : pointsForLevel(lv.level + 1) - pointsForLevel(lv.level);
+    const sk = this.h.skills();
+    const groups = [...new Set(SKILLS.map((x) => x.group))];
+    const skills = groups.map((g) => {
+      const cards = SKILLS.filter((x) => x.group === g).map((x) => {
+        const l = sk.level(x.id);
+        const seg = Array.from({ length: MAX_LEVEL }, (_, i) => `<u class="${i < l ? 'on' : i === l ? 'cur' : ''}"${i === l ? ` style="--f:${Math.round(sk.progress(x.id) * 100)}%"` : ''}></u>`).join('');
+        return `<div class="sk${l >= MAX_LEVEL ? ' max' : ''}" title="${x.perk}"><div class="skt"><span>${x.name}</span><b>${l}</b></div><div class="seg">${seg}</div></div>`;
+      }).join('');
+      return `<h5>${g}</h5><div class="skgrid">${cards}</div>`;
+    }).join('');
+    return `<h3>Fortschritt</h3>
+      <div class="lvl"><div class="ring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" class="bg"/><circle cx="32" cy="32" r="26" class="fg" stroke-dasharray="${(C * lv.progress).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/></svg><div><small>Stufe</small><b>${lv.level}</b></div></div>
+        <div class="lvl-b"><span class="lx">${lv.level >= LEVEL_MAX ? 'Höchste Stufe' : `${lv.toNext} XP bis Stufe ${lv.level + 1}`}${next ? ` · +${next} Punkt${next === 1 ? '' : 'e'}` : ''}</span>
+        <div class="shards"><span>Talentpunkte</span><b>${free}</b></div>
+        <small>${tl.spent} ausgegeben · ${pointsForLevel(lv.level)} bisher</small></div></div>
+      <h3>Fertigkeiten</h3>${skills}`;
   }
 
   private hex(cx: number, cy: number, r: number): string {

@@ -15,6 +15,22 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: '0.4.3',
+    date: '19.10.2026',
+    name: 'Seiten für Talente und Herstellen',
+    groups: [
+      {
+        title: 'Inventar',
+        items: [
+          { kind: 'neu', text: 'Talente haben eine eigene Vollseite mit derselben Kopfleiste wie das Inventar: Talentbaum, Stufe, Talentpunkte und alle Fertigkeiten.' },
+          { kind: 'neu', text: 'Herstellen ist eine eigene Seite, die Person und Figur überdeckt; alle bekannten Rezepte stehen nach Gruppen sortiert nebeneinander.' },
+          { kind: 'besser', text: 'Person zeigt Werte und Zustände, direkt darunter die Gesundheit mit Körperteilen und Behandlungen; kein eigener Gesundheits-Reiter mehr.' },
+          { kind: 'besser', text: 'Keine Filterleiste mehr, kleinere Ausrüstungsfelder und mehr Platz im Personenmenü, sodass man nicht scrollen muss.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.4.2',
     date: '19.10.2026',
     name: 'Neues Inventar und Talentfenster',
