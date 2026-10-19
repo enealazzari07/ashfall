@@ -15,6 +15,47 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: '0.4.0',
+    date: '19.10.2026',
+    name: 'Straßen, Raststätten und Autos',
+    groups: [
+      {
+        title: 'Straßen und Gehwege',
+        items: [
+          { kind: 'besser', text: 'Feiner Asphalt statt grober Pixelflecken, nahtlos über Kreuzungen und Chunk-Grenzen; Gehwegplatten werden nicht mehr gestreckt.' },
+          { kind: 'besser', text: 'Markierungen mit abgeriebener Farbe: doppelte gelbe Mittellinie, Linien enden vor Zebrastreifen und Haltelinien, die Kreuzung bleibt frei.' },
+          { kind: 'besser', text: 'Bordsteine mit Fase und Stoßfugen, davor eine Rinne aus Pflastersteinen; Kanaldeckel und Gullys mit echter Textur.' },
+          { kind: 'neu', text: 'Jede Straße sieht anders aus: Reifenspuren in Abschnitten, Risse, Netzrisse, Bitumenverguss, kleine und große Schlaglöcher, Flicken, Bremsspuren, Ölflecken und Pfützen. Manche Abschnitte sind frisch saniert, andere kaputt.' },
+          { kind: 'neu', text: 'Leitpfosten an den Landstraßen; Autobahn und Rampen haben den neuen Asphalt.' },
+        ],
+      },
+      {
+        title: 'Land',
+        items: [
+          { kind: 'neu', text: 'Schmale Nebenstraßen zweigen von den Landstraßen ab und enden an einem Wendeplatz, oft mit Bauernhaus, Auto oder Heu.' },
+          { kind: 'neu', text: 'Raststätte an der Autobahn: Tankdach mit Zapfsäulen, Preismast, Shop, Lkw- und Pkw-Parkplätze, bepflanzte Inseln, Picknickwiese, Automaten.' },
+          { kind: 'neu', text: 'Tankstellen an den Landstraßen; die Wald-Raststätten sind jetzt Wanderparkplätze mit Picknicklichtung.' },
+          { kind: 'besser', text: 'Wiesen ohne sichtbares Kachelmuster, mit trockenen, satten und erdigen Stellen.' },
+        ],
+      },
+      {
+        title: 'Autos',
+        items: [
+          { kind: 'besser', text: 'Glänzender Lack mit Klarlack statt grau-stumpfer Farbe, abgerundete Bleche, neue Räder mit Felgen und Speichen, Schatten unter den Autos.' },
+          { kind: 'besser', text: 'Geparkte Autos stehen in Fahrtrichtung ihres Fahrstreifens. Die Verformung beim Unfall rechnet schneller.' },
+        ],
+      },
+      {
+        title: 'Fehler',
+        items: [
+          { kind: 'fix', text: 'Fehlende Bordsteine an manchen Gehwegen und Kreuzungsecken.' },
+          { kind: 'fix', text: 'Haltelinien lagen über der Mittellinie statt auf der zufahrenden Fahrbahn.' },
+          { kind: 'fix', text: 'Regen machte den Autolack nicht nass; Gassen zeigten Fahrbahnlinien.' },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.3.9',
     date: '18.10.2026',
     name: 'Charakterstufe, Werkbank und neue Möbel',
