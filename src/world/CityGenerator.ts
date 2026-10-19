@@ -1,8 +1,9 @@
 import { forestLot, parkingBeside, parkingLot, restLot, yardClutter } from './Rural';
+import { Apron, Canopy, EdgeCover, Picnic, PumpIsland, Pylon, Vendor, buildStation, laneEnd, laneJunction } from './Station';
 import { Stack } from '../data/items';
 import { LotRect, gardenFor, makeBuilding, pruneTouchingWalls, tryGarage } from './Buildings';
 import { farmLot } from './Farm';
-import { PathSlice, cellOf, cityOf, clearance, edgeAlley, edgeRoad, hf, isCityChunk, isVillageChunk, poseAt, sliceDist, slicesFor } from './WorldMap';
+import { PathSlice, cellOf, cityOf, clearance, edgeAlley, edgeRoad, hf, isCityChunk, isVillageChunk, poseAt, sliceDist, slicesFor, stationsNear } from './WorldMap';
 import { lanePose } from '../render/RoadRibbon';
 import { CAR_MODEL_COUNT, Livery, modelIndex, weathered } from '../render/CarModel';
 
@@ -321,6 +322,18 @@ export interface ChunkSpec {
   signs: Sign[];
   cars: Car[];
   train: Wagon[];
+  /** Raststätten: Tankdächer, Zapfsäuleninseln, Preismasten, Picknicktische, Mülleimer */
+  canopies: Canopy[];
+  pumps: PumpIsland[];
+  pylons: Pylon[];
+  picnics: Picnic[];
+  bins: { x: number; z: number }[];
+  vendors: Vendor[];
+  /** Betonboden unter Tankdächern */
+  slabs: Box[];
+  /** flache Zufahrten unter Fahrbahnen und Asphaltstücke, die Randlinien an Einfahrten unterbrechen */
+  aprons: Apron[];
+  edgeCovers: EdgeCover[];
 }
 
 export function rng(seed: number): () => number {
@@ -467,6 +480,7 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
     alleyV: edgeAlley('W', cx, cz), alleyH: edgeAlley('N', cx, cz),
     urbanV: isCityChunk(cx, cz) || isCityChunk(cx - 1, cz), urbanH: isCityChunk(cx, cz) || isCityChunk(cx, cz - 1),
     paths: slices, pads: [], models: [], yards: [], fields: [], fences: [], hay: [], sacks: [], ladders: [], decks: [], beds: [], hedges: [], pits: [], benches: [], buildings: [], trees: [], bushes: [], flowers: [], lamps: [], signs: [], cars: [], train: [],
+    canopies: [], pumps: [], pylons: [], picnics: [], bins: [], vendors: [], slabs: [], aprons: [], edgeCovers: [],
   };
 
   const addCar = (x: number, z: number, rot: number) => {
@@ -747,8 +761,14 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
 
     // Geparkte Autos auf den Fahrbahnen (nie auf der Spawn-Kreuzung)
     for (let k = 0; k < Math.floor(r() * (land === 'town' ? 3 + urb * 5 : 0)); k++) {
-      if (roadH && (r() < 0.5 || !roadV)) addCar(ox + 16 + r() * 44, oz + (r() < 0.5 ? ROAD * 0.27 : ROAD * 0.73), 0);
-      else if (roadV) addCar(ox + (r() < 0.5 ? ROAD * 0.27 : ROAD * 0.73), oz + 16 + r() * 44, Math.PI / 2);
+      // Rechtsverkehr: Autos stehen in Fahrtrichtung ihres Fahrstreifens (gleiche Zufallsfolge wie zuvor)
+      if (roadH && (r() < 0.5 || !roadV)) {
+        const x = ox + 16 + r() * 44, north = r() < 0.5;
+        addCar(x, oz + (north ? ROAD * 0.27 : ROAD * 0.73), north ? Math.PI : 0);
+      } else if (roadV) {
+        const west = r() < 0.5;
+        addCar(ox + (west ? ROAD * 0.27 : ROAD * 0.73), oz + 16 + r() * 44, west ? -Math.PI / 2 : Math.PI / 2);
+      }
     }
   }
 
@@ -803,6 +823,15 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
         if (inChunk(lp.x, lp.z)) addCar(lp.x, lp.z, side < 0 ? lp.rot + Math.PI : lp.rot);
       }
     }
+    if (pth.kind === 'lane') {
+      // ab und zu ein am Rand abgestelltes Auto
+      for (let q = Math.ceil(s0 / 60) * 60; q <= s1; q += 60) {
+        if (r() > 0.1 || q < 30) continue;
+        const side = r() < 0.5 ? -1 : 1;
+        const lp = lanePose(pth, q, side * (pth.width / 2 - 0.6));
+        if (inChunk(lp.x, lp.z)) addCar(lp.x, lp.z, side < 0 ? lp.rot + Math.PI : lp.rot);
+      }
+    }
     if (pth.kind === 'ramp' || pth.kind === 'service') {
       // Einbahnstraße: alle Autos fahren in Pfadrichtung; auf der Servicespur stehen Autos zum Parken
       for (let q = Math.ceil(s0 / 40) * 40; q <= s1; q += 40) {
@@ -829,6 +858,13 @@ export function generateChunk(cx: number, cz: number): ChunkSpec {
     spec.flowers = spec.flowers.filter((t) => ok(t.x, t.z, 1));
     spec.models = spec.models.filter((m) => ok(m.x, m.z, 1.6));
     spec.lamps = spec.lamps.filter((l) => ok(l.x, l.z, -1.2));
+  }
+  // Raststätten und Nebenstraßen-Enden räumen ihre Fläche selbst frei und kommen deshalb zuletzt
+  for (const st of stationsNear(cx, cz, 4)) buildStation(spec, st, cx, cz, slices);
+  for (const sl of slices) {
+    if (sl.path.kind !== 'lane') continue;
+    if (sl.i0 === 0) laneJunction(spec, sl, slices, cx, cz);
+    if (sl.i1 === sl.path.pts.length - 1) laneEnd(spec, sl, cx, cz);
   }
   return spec;
 }

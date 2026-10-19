@@ -1,0 +1,42 @@
+# Baut den Windows-Installer und veröffentlicht ihn als GitHub-Release, sobald ein Tag v* gepusht wird.
+# Titel "Ashfall <Version>", Beschreibung aus .github/release-notes.md.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Abhängigkeiten
+        run: npm ci
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Bauen und veröffentlichen
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Titel und Beschreibung
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          [[ "$tag" == v* ]] || tag="v$(node -p "require('./package.json').version")"
+          gh release edit "$tag" --title "Ashfall ${tag#v}" --notes-file .github/release-notes.md --draft=false --latest

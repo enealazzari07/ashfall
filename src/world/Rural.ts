@@ -1,5 +1,5 @@
 import { Box, BuildingSpec, ChunkSpec, pick, newCar } from './CityGenerator';
-import { LotRect, makeBuilding } from './Buildings';
+import { LotRect } from './Buildings';
 import { CAR_MODEL_COUNT } from '../render/CarModel';
 
 const GREEN = [0x3f7a43, 0x4c8a47, 0x35693c, 0x5a8f4a];
@@ -15,26 +15,26 @@ export function forestLot(r: () => number, spec: ChunkSpec, lot: LotRect, densit
   }
 }
 
-/** Raststätte: Asphaltplatz mit kleinem Laden, parkenden Lkw, Containern, Paletten, Absperrungen und Lampen. */
+/** Wanderparkplatz im Wald: kleiner Asphaltplatz mit Stellplätzen, Picknicktische auf der Lichtung, Mülleimer, Bänke, Laternen. */
 export function restLot(r: () => number, spec: ChunkSpec, lot: LotRect, i: number, j: number): void {
   if (i !== 0 || j !== 0) {
-    forestLot(r, spec, lot);
+    forestLot(r, spec, lot, i === j ? 0.6 : 1);
     return;
   }
-  const x0 = lot.x - lot.w / 2, z0 = lot.z - lot.d / 2;
-  // Laden an der Rückseite, Tür zum Platz (Seite -z)
-  const shopLot: LotRect = { x: lot.x, z: z0 + lot.d * 0.78, w: lot.w, d: lot.d * 0.44 };
-  const shop = makeBuilding(r, shopLot, 1, 'mixed', 0.35, { kind: 'shop' });
-  spec.buildings.push(shop);
-  const pad: Box = { x: lot.x, z: z0 + lot.d * 0.28, w: lot.w - 0.4, d: lot.d * 0.56 };
+  const z0 = lot.z - lot.d / 2;
+  const pad: Box = { x: lot.x, z: z0 + 7, w: lot.w - 4, d: 10 };
   spec.pads.push(pad);
-  const px = (t: number) => x0 + 2 + t * (lot.w - 4);
-  const pz = (t: number) => pad.z - pad.d / 2 + 1.5 + t * (pad.d - 3);
-  spec.models.push({ name: 'pallet', x: px(0.05), z: pz(0.88), rot: 0.3 }, { name: 'pallet-small', x: px(0.1), z: pz(0.8), rot: 1 });
-  spec.models.push({ name: 'detail-barrier-type-a', x: px(0.5), z: pz(0.55), rot: 0, solid: true }, { name: 'detail-barrier-type-b', x: px(0.58), z: pz(0.55), rot: 0, solid: true });
-  spec.models.push({ name: 'detail-light-double', x: px(0.35), z: pz(0.6), rot: 0 }, { name: 'detail-light-single', x: px(0.8), z: pz(0.6), rot: Math.PI });
-  spec.benches.push({ x: x0 + lot.w / 2 + shop.w / 2 + 2, z: shopLot.z - shopLot.d / 2 - 1.2, rot: 0 });
-  if (r() < 0.8) spec.cars.push(newCar(r, px(0.6), pz(0.2), 0));
+  stallRow(r, spec, { x: pad.x, z: pad.z + 0.6, w: pad.w - 2, d: STALL_D }, true, 0.45);
+  spec.models.push({ name: 'detail-light-single', x: pad.x - pad.w / 2 + 1, z: pad.z - 3.6, rot: 0 });
+  // Lichtung mit Picknicktischen
+  for (const [u, v] of [[-7, 17], [0, 19.5], [7, 17], [-3, 23.5]]) spec.picnics.push({ x: lot.x + u, z: z0 + v, rot: r() * Math.PI });
+  spec.bins.push({ x: lot.x - 4, z: z0 + 13 }, { x: lot.x + 9, z: z0 + 13 });
+  spec.benches.push({ x: lot.x + 10, z: z0 + 22, rot: Math.PI / 2 });
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2;
+    spec.trees.push({ x: lot.x + Math.cos(a) * 12.5, z: z0 + 19 + Math.sin(a) * 6.5, s: 1 + r() * 0.6 });
+  }
+  for (let k = 0; k < 6; k++) spec.bushes.push({ x: lot.x + (r() - 0.5) * (lot.w - 4), z: z0 + 2 + r() * 2, s: 0.6 + r() * 0.5, color: pick(r, GREEN) });
 }
 
 /** Leerer Platz in der Industrie: abgestellter Lkw, Paletten, Container, Absperrungen. */

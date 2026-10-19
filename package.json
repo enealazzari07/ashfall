@@ -1,6 +1,6 @@
 {
   "name": "ashfall",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -46,7 +46,8 @@
     "publish": {
       "provider": "github",
       "owner": "enealazzari07",
-      "repo": "ashfall"
+      "repo": "ashfall",
+      "releaseType": "release"
     },
     "nsis": {
       "oneClick": true,

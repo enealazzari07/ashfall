@@ -732,6 +732,10 @@ export class ChunkManager {
       for (let k = 0; k < 4; k++) grp.wheels?.setMatrixAt(sl.i * 4 + k, gone);
       if (grp.wheels) grp.wheels.instanceMatrix.needsUpdate = true;
     }
+    if (set.shadow) {
+      set.shadow.setMatrixAt(i, gone);
+      set.shadow.instanceMatrix.needsUpdate = true;
+    }
     const at = chunk.colliders.indexOf(set.boxes[i]);
     if (at >= 0) chunk.colliders.splice(at, 1);
   }

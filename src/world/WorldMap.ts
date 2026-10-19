@@ -12,9 +12,11 @@ export const RAIL_W = 10;
 export const COUNTRY_W = 7;
 export const RAMP_W = 9;
 export const BOULEVARD_W = 10;
+/** Nebenstraße auf dem Land: schmal, ohne Markierung */
+export const LANE_W = 4.6;
 
 export interface Pt { x: number; z: number }
-export type PathKind = 'highway' | 'rail' | 'country' | 'ramp' | 'service' | 'boulevard';
+export type PathKind = 'highway' | 'rail' | 'country' | 'ramp' | 'service' | 'boulevard' | 'lane';
 export interface RoadPath {
   id: string;
   kind: PathKind;
@@ -249,6 +251,7 @@ export function cellPaths(rx: number, rz: number): RoadPath[] {
   const hit = cellCache.get(key);
   if (hit) return hit;
   const out: RoadPath[] = [];
+  const stations: Station[] = [];
   const xs = (rx * CELL_W - CELL_W / 2) * CH, xe = xs + CELL_W * CH;
   const city = cityOf(rx, rz);
 
@@ -299,9 +302,20 @@ export function cellPaths(rx: number, rz: number): RoadPath[] {
     hwPath.gaps!.push({ side: -1, s0: sAt(xi) - 14, s1: sAt(xi) + 80 });
   }
 
-  // Rastplatz auf der Südfahrbahn (Richtung Osten): Servicespur schwenkt aus, läuft parallel und fädelt wieder ein
+  // Rastplatz auf der Südfahrbahn (Richtung Osten): Servicespur schwenkt aus, läuft parallel und fädelt wieder ein.
+  // Er liegt dort, wo die Autobahn nahe der Stadtmitte am geradesten ist (die Raststätte daneben steht achsparallel).
   {
-    const xr = (city.cx0 + city.w / 2) * CH;
+    const x0 = (city.cx0 + city.w / 2) * CH;
+    let xr = x0, bestSlope = Infinity;
+    for (let k = -6; k <= 6; k++) {
+      const x = x0 + k * 40;
+      let sl = 0;
+      for (let u = -70; u <= 70; u += 35) sl = Math.max(sl, Math.abs(highwayZ(x + u + 5, rz) - highwayZ(x + u - 5, rz)) / 10);
+      if (sl < bestSlope - 0.01) {
+        bestSlope = sl;
+        xr = x;
+      }
+    }
     const sA = sAt(xr - 230), sB = sAt(xr + 230);
     const L = sB - sA, ramp = 165;
     const pts: Pt[] = [];
@@ -316,6 +330,18 @@ export function cellPaths(rx: number, rz: number): RoadPath[] {
     p.taper = { a: 70, b: 70 };
     out.push(p);
     hwPath.gaps!.push({ side: 1, s0: sA - 10, s1: sA + 85 }, { side: 1, s0: sB - 85, s1: sB + 10 });
+    // Raststätte südlich der Servicespur, über die Länge der parallelen Strecke
+    const half = 58;
+    let zEdge = -Infinity, zMin = Infinity;
+    for (let x = xr - half; x <= xr + half; x += 4) {
+      const z = sideZ(p, x);
+      zEdge = Math.max(zEdge, z + RAMP_W / 2);
+      zMin = Math.min(zMin, z);
+    }
+    stations.push({
+      id: `hs${rx},${rz}`, kind: 'highway', x: xr, z: zEdge + 1 + 24, w: half * 2, d: 48, front: -1,
+      apron: { x0: xr - half, x1: xr + half, z0: zMin, z1: zEdge + 1 },
+    });
   }
 
   // Landstraßen: von der Stadt (Außenkante der Ringstraße) zu den Übergabepunkten an den Zellgrenzen im Osten und Westen
@@ -326,10 +352,135 @@ export function cellPaths(rx: number, rz: number): RoadPath[] {
     const east = { x: (edges.east + 1) * CH + RD, z: zc };
     const west = { x: edges.west * CH, z: zc };
     const gE = { x: xe, z: gateZ(rx + 1, rz) }, gW = { x: xs, z: gateZ(rx, rz) };
-    out.push(makePath(`ce${rx},${rz}`, 'country', COUNTRY_W, windy(east, gE, rx * 131 + rz * 17 + 1)));
-    out.push(makePath(`cw${rx},${rz}`, 'country', COUNTRY_W, windy(west, gW, rx * 131 + rz * 17 + 2)));
+    const ce = makePath(`ce${rx},${rz}`, 'country', COUNTRY_W, windy(east, gE, rx * 131 + rz * 17 + 1));
+    const cw = makePath(`cw${rx},${rz}`, 'country', COUNTRY_W, windy(west, gW, rx * 131 + rz * 17 + 2));
+    out.push(ce, cw);
+    for (const [k, c] of [ce, cw].entries()) {
+      const st = countryStation(c, rx, rz, k);
+      if (st) stations.push(st);
+    }
+    for (const [k, c] of [ce, cw].entries()) out.push(...sideLanes(c, rx, rz, k, stations));
   }
   cellCache.set(key, out);
+  stationCache.set(key, stations);
+  return out;
+}
+
+/** Z eines Pfades bei x (Pfade, die überwiegend entlang x laufen) */
+function sideZ(p: RoadPath, x: number): number {
+  const { pts } = p;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if ((a.x - x) * (b.x - x) <= 0 && a.x !== b.x) return a.z + ((x - a.x) / (b.x - a.x)) * (b.z - a.z);
+  }
+  return pts[Math.abs(pts[0].x - x) < Math.abs(pts[pts.length - 1].x - x) ? 0 : pts.length - 1].z;
+}
+
+/** Abstand zu Autobahn und Bahn der Zelle und der Nachbarzellen in z */
+function farFromTracks(x: number, z: number, rz: number, pad: number): boolean {
+  for (const q of [rz - 1, rz, rz + 1]) {
+    if (Math.abs(z - highwayZ(x, q)) < HIGHWAY_W / 2 + pad || Math.abs(z - railZ(x, q)) < RAIL_W / 2 + pad) return false;
+  }
+  return true;
+}
+
+const chunkOf = (v: number) => Math.floor(v / CH);
+/** Liegt das Rechteck (mit Rand) außerhalb aller Städte? (Dörfer liegen in der Mitte der Landstraßen und werden dort ausgespart.) */
+function outsideCities(x0: number, z0: number, x1: number, z1: number): boolean {
+  for (let cx = chunkOf(x0); cx <= chunkOf(x1); cx++) for (let cz = chunkOf(z0); cz <= chunkOf(z1); cz++) if (isCityChunk(cx, cz)) return false;
+  return true;
+}
+
+/**
+ * Tankstelle an der Landstraße: dort, wo die Straße fast gerade entlang x läuft, achsparallel neben der Fahrbahn.
+ * Die Zufahrt (apron) liegt unter der Straße und füllt den Spalt bis zum Platz.
+ */
+function countryStation(p: RoadPath, rx: number, rz: number, k: number): Station | null {
+  if (hf(rx, rz, 90 + k) > 0.75) return null;
+  const W = 60, D = 40;
+  let best: Station | null = null, bestScore = Infinity;
+  for (let t = 0.14; t <= 0.86; t += 0.02) {
+    if (t > 0.38 && t < 0.66) continue; // nicht im Dorf
+    const q = poseAt(p, p.len * t);
+    let zLo = Infinity, zHi = -Infinity;
+    for (let x = q.x - W / 2; x <= q.x + W / 2; x += 4) {
+      const z = sideZ(p, x);
+      zLo = Math.min(zLo, z);
+      zHi = Math.max(zHi, z);
+    }
+    const score = zHi - zLo;
+    if (score > 6 || score >= bestScore) continue;
+    const side = hf(rx, rz, 94 + k) < 0.5 ? -1 : 1;
+    const edge = side > 0 ? zHi + COUNTRY_W / 2 + 1.5 : zLo - COUNTRY_W / 2 - 1.5;
+    const zc = edge + side * (D / 2);
+    if (!farFromTracks(q.x, zc, rz, D / 2 + 30) || !outsideCities(q.x - W / 2 - 20, zc - D / 2 - 20, q.x + W / 2 + 20, zc + D / 2 + 20)) continue;
+    bestScore = score;
+    best = {
+      id: `cs${rx},${rz},${k}`, kind: 'country', x: q.x, z: zc, w: W, d: D, front: side > 0 ? -1 : 1,
+      apron: side > 0 ? { x0: q.x - W / 2, x1: q.x + W / 2, z0: zLo, z1: edge } : { x0: q.x - W / 2, x1: q.x + W / 2, z0: edge, z1: zHi },
+    };
+  }
+  return best;
+}
+
+/** Schmale Nebenstraßen: zweigen rechtwinklig von der Landstraße ab und enden nach 110–260 m an einem Hof oder Waldstück. */
+function sideLanes(p: RoadPath, rx: number, rz: number, k: number, stations: Station[]): RoadPath[] {
+  const out: RoadPath[] = [];
+  for (let i = 0; i < 4; i++) {
+    const t = 0.1 + i * 0.22 + hf(rx * 3 + i, rz, 100 + k) * 0.1;
+    if (t > 0.4 && t < 0.62) continue; // das Dorf hat seine eigenen Wege
+    const q = poseAt(p, p.len * t);
+    const L = 110 + hf(rx, rz * 5 + i, 110 + k) * 150;
+    const bend = (hf(rx, rz, 120 + i + k * 7) - 0.5) * 70;
+    for (const side of hf(rx, rz, 130 + i + k * 7) < 0.5 ? [1, -1] : [-1, 1]) {
+      const nx = -q.tz * side, nz = q.tx * side;
+      const a = { x: q.x, z: q.z };
+      const e = { x: q.x + nx * L + q.tx * bend, z: q.z + nz * L + q.tz * bend };
+      const pts = bezier(a, { x: a.x + nx * 45, z: a.z + nz * 45 }, { x: e.x - nx * 50, z: e.z - nz * 50 }, e, Math.ceil(L / 8));
+      const ok = pts.every((pt, j) => j < 2 || (farFromTracks(pt.x, pt.z, rz, 30) && !isCityChunk(chunkOf(pt.x), chunkOf(pt.z))))
+        && !stations.some((st) => pts.some((pt) => Math.abs(pt.x - st.x) < st.w / 2 + 12 && Math.abs(pt.z - st.z) < st.d / 2 + 12));
+      if (!ok) continue;
+      out.push(makePath(`ln${rx},${rz},${k},${i}`, 'lane', LANE_W, pts));
+      break;
+    }
+  }
+  return out;
+}
+
+/** Raststätte/Tankstelle: achsparalleles Rechteck (Mitte x, z; Breite w entlang x, Tiefe d entlang z). */
+export interface Station {
+  id: string;
+  kind: 'highway' | 'country';
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  /** Seite zur Straße: −1 = Nordkante (kleineres z), +1 = Südkante */
+  front: -1 | 1;
+  /** Asphalt zwischen Fahrbahn und Platz (liegt unter der Fahrbahn) */
+  apron: Rect4;
+}
+const stationCache = new Map<string, Station[]>();
+
+export function cellStations(rx: number, rz: number): Station[] {
+  cellPaths(rx, rz);
+  return stationCache.get(`${rx},${rz}`)!;
+}
+
+/** Raststätten, deren Fläche (mit Rand `pad`) den Chunk berührt */
+export function stationsNear(cx: number, cz: number, pad = 0): Station[] {
+  const seen = new Set<string>();
+  const out: Station[] = [];
+  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
+    const c = cellOf(cx + dx * 2, cz + dz * 2);
+    if (seen.has(`${c.rx},${c.rz}`)) continue;
+    seen.add(`${c.rx},${c.rz}`);
+    for (const st of cellStations(c.rx, c.rz)) {
+      const x0 = Math.min(st.x - st.w / 2, st.apron.x0), x1 = Math.max(st.x + st.w / 2, st.apron.x1);
+      const z0 = Math.min(st.z - st.d / 2, st.apron.z0), z1 = Math.max(st.z + st.d / 2, st.apron.z1);
+      if (x1 + pad > cx * CH && x0 - pad < (cx + 1) * CH && z1 + pad > cz * CH && z0 - pad < (cz + 1) * CH) out.push(st);
+    }
+  }
   return out;
 }
 

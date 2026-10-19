@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { streetTextures } from './StreetTextures';
 
 /**
  * Autos aus einer Modelltabelle. Koordinaten: x = Fahrtrichtung (vorn +), y = oben, z = rechts (links = -z).
@@ -124,6 +126,11 @@ function bx(w: number, h: number, d: number, x: number, y: number, z: number, he
   return hex === undefined ? plain(g) : paintGeo(g, hex);
 }
 
+/** Box mit abgerundeten Kanten (Dach, Haube, Deckel): fängt Glanzlichter wie echtes Blech */
+function rbx(w: number, h: number, d: number, x: number, y: number, z: number, radius: number): THREE.BufferGeometry {
+  return plain(new RoundedBoxGeometry(w, h, d, 3, Math.min(radius, h / 2 - 0.001)).translate(x, y, z));
+}
+
 /** Balken zwischen zwei Punkten der Seitenansicht (x,y), bei z */
 function beam(x0: number, y0: number, x1: number, y1: number, thick: number, depth: number, z: number): THREE.BufferGeometry {
   const len = Math.hypot(x1 - x0, y1 - y0), a = Math.atan2(y1 - y0, x1 - x0);
@@ -169,8 +176,12 @@ function skinGeo(m: CarModelSpec): THREE.BufferGeometry {
   hole.lineTo(x1, y0);
   hole.closePath();
   sh.holes.push(hole);
-  const g = new THREE.ExtrudeGeometry(sh, { depth: DOOR_T, bevelEnabled: false });
-  return plain(g);
+  // Kanten leicht gefast: Umriss bleibt gleich (Offset = −Fase), die Fläche wird um die Fase kleiner
+  const B = 0.012;
+  const g = new THREE.ExtrudeGeometry(sh, {
+    depth: DOOR_T - 2 * B, bevelEnabled: true, bevelThickness: B, bevelSize: B, bevelOffset: -B, bevelSegments: 2,
+  });
+  return plain(g.translate(0, 0, B));
 }
 
 export interface CarGeos {
@@ -202,19 +213,34 @@ export interface CarGeos {
 const geoCache = new Map<string, CarGeos>();
 const wheelCache = new Map<string, THREE.BufferGeometry>();
 
-/** Rad: Reifen, Felge, Nabe, 5 Speichen; Achse = z */
+/** Rad: Lauffläche mit runden Schultern, Flanken, Felge mit Horn, vertiefter Schüssel, 5 Speichen, Nabe und Radmuttern; Achse = z, beidseitig gleich */
 export function wheelGeo(r: number, w: number): THREE.BufferGeometry {
   const key = `${r}|${w}`;
   const hit = wheelCache.get(key);
   if (hit) return hit;
-  const tyre = paintGeo(new THREE.CylinderGeometry(r, r, w, 22).rotateX(Math.PI / 2), 0x151517);
-  const rim = paintGeo(new THREE.CylinderGeometry(r * 0.66, r * 0.66, w + 0.02, 16).rotateX(Math.PI / 2), 0xb9bcc2);
-  const hub = paintGeo(new THREE.CylinderGeometry(0.06, 0.06, w + 0.04, 8).rotateX(Math.PI / 2), 0x2a2b2e);
-  const spokes: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 5; i++) {
-    spokes.push(paintGeo(new THREE.BoxGeometry(r * 1.05, 0.045, w + 0.04).translate(r * 0.3, 0, 0).rotateZ((i / 5) * Math.PI * 2), 0x6c6f75));
+  const t = Math.min(0.05, w * 0.18); // Reifenschulter
+  const rimR = r * 0.64;
+  const parts: THREE.BufferGeometry[] = [
+    paintGeo(new THREE.CylinderGeometry(r, r, w - 2 * t, 26, 1, true).rotateX(Math.PI / 2), 0x18181a), // Lauffläche
+    paintGeo(new THREE.CylinderGeometry(rimR, rimR, w - 0.02, 20, 1, true).rotateX(Math.PI / 2), 0x9a9da3), // Felgenbett
+  ];
+  const facing = (g: THREE.BufferGeometry, sg: number, z: number) => (sg < 0 ? g.rotateY(Math.PI) : g).translate(0, 0, sg * z);
+  for (const sg of [-1, 1]) {
+    parts.push(
+      paintGeo(new THREE.TorusGeometry(r - t, t, 6, 26).translate(0, 0, sg * (w / 2 - t)), 0x1c1c1e), // Schulter
+      paintGeo(facing(new THREE.RingGeometry(rimR, r - t, 26, 1), sg, w / 2), 0x252528), // Flanke
+      paintGeo(new THREE.TorusGeometry(rimR - 0.006, 0.013, 5, 24).translate(0, 0, sg * (w / 2 - 0.006)), 0xd4d7dc), // Felgenhorn
+      paintGeo(facing(new THREE.CircleGeometry(rimR - 0.01, 24), sg, w / 2 - 0.05), 0x2c2e32), // dunkle Schüssel
+      paintGeo(new THREE.CylinderGeometry(0.075, 0.085, 0.04, 14).rotateX(Math.PI / 2).translate(0, 0, sg * (w / 2 - 0.03)), 0xc3c6cb), // Nabe
+    );
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const len = rimR - 0.06;
+      parts.push(paintGeo(new THREE.BoxGeometry(len, 0.055, 0.03).translate(0.06 + len / 2, 0, 0).rotateZ(a).translate(0, 0, sg * (w / 2 - 0.035)), 0xaeb1b7));
+      parts.push(paintGeo(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 6).rotateX(Math.PI / 2).translate(Math.cos(a + 0.63) * 0.05, Math.sin(a + 0.63) * 0.05, sg * (w / 2 - 0.01)), 0x6b6e73));
+    }
   }
-  const g = mergeGeometries([tyre, rim, hub, ...spokes])!;
+  const g = mergeGeometries(parts)!;
   wheelCache.set(key, g);
   return g;
 }
@@ -238,7 +264,7 @@ function buildGeos(m: CarModelSpec): CarGeos {
   const skinR = skinGeo(m).translate(0, 0, m.W / 2 - DOOR_T);
   const skinL = skinGeo(m).translate(0, 0, -m.W / 2);
   const roofLen = m.aTopX - m.cTopX + 0.12;
-  const roof = bx(roofLen, 0.05, hc * 2 + 0.04, (m.aTopX + m.cTopX) / 2, m.roof - 0.025, 0);
+  const roof = rbx(roofLen, 0.07, hc * 2 + 0.06, (m.aTopX + m.cTopX) / 2, m.roof - 0.035, 0, 0.03);
   const pillars: THREE.BufferGeometry[] = [];
   for (const sg of [-1, 1]) {
     const z = sg * (hc - 0.02);
@@ -271,14 +297,14 @@ function buildGeos(m: CarModelSpec): CarGeos {
   const hoodL = m.noseX - m.cowlX - 0.02;
   const hoodA = Math.atan2(m.hoodFront - m.belt, m.noseX - m.cowlX);
   const hoodHinge = new THREE.Vector3(m.cowlX, m.belt - 0.02, 0);
-  const hood = plain(new THREE.BoxGeometry(hoodL, 0.04, m.W - 0.11).translate(hoodL / 2, 0, 0).rotateZ(hoodA));
+  const hood = rbx(hoodL, 0.045, m.W - 0.1, hoodL / 2, 0, 0, 0.02).rotateZ(hoodA);
   // Kofferraumdeckel (nur Limousine/Coupé), Scharnier vorn
   let trunk: THREE.BufferGeometry | null = null;
   const trunkHinge = new THREE.Vector3(m.cBaseX, m.belt - 0.02, 0);
   if (m.rear === 'trunk') {
     const tl = m.cBaseX - m.tailX - 0.02;
     const ta = Math.atan2(m.belt - m.deck, m.cBaseX - m.tailX);
-    trunk = plain(new THREE.BoxGeometry(tl, 0.04, m.W - 0.11).translate(-tl / 2, 0, 0).rotateZ(ta));
+    trunk = rbx(tl, 0.045, m.W - 0.1, -tl / 2, 0, 0, 0.02).rotateZ(ta);
   }
 
   const doorsClosed = [-1, 1].map((sg) => door.clone().translate(hingeX, 0, sg * (m.W / 2 - DOOR_T / 2)));
@@ -324,6 +350,8 @@ function buildGeos(m: CarModelSpec): CarGeos {
     if (h < 0.1) continue;
     for (const sg of [-1, 1]) darkParts.push(bx(0.012, h, 0.012, x, low + h / 2, sg * (m.W / 2 + 0.002), dark));
   }
+  // Fensterdichtung entlang der Brüstung: rahmt die Scheiben von oben sichtbar ein
+  for (const sg of [-1, 1]) darkParts.push(bx(m.cowlX - m.cBaseX, 0.03, 0.04, (m.cowlX + m.cBaseX) / 2, m.belt + 0.012, sg * (hc - 0.005), 0x111113));
   const under = mergeGeometries(darkParts)!;
 
   // --- Stoßstangen, Spiegel ---
@@ -336,6 +364,8 @@ function buildGeos(m: CarModelSpec): CarGeos {
     bx(0.04, 0.12, 0.42, m.noseX + 0.01, bumperY, 0, plate),
     bx(0.08, 0.15, 0.4, m.noseX - 0.06, m.hoodFront - 0.1, m.W / 2 - 0.3, 0xfff1c8),
     bx(0.08, 0.15, 0.4, m.noseX - 0.06, m.hoodFront - 0.1, -(m.W / 2 - 0.3), 0xfff1c8),
+    bx(0.06, 0.07, 0.08, m.noseX - 0.05, m.hoodFront - 0.1, m.W / 2 - 0.06, 0xe08a1c), // Blinker
+    bx(0.06, 0.07, 0.08, m.noseX - 0.05, m.hoodFront - 0.1, -(m.W / 2 - 0.06), 0xe08a1c),
   ];
   const tailY = m.rear === 'trunk' ? m.deck - 0.1 : m.belt - 0.18;
   const bumperRParts = [
@@ -391,17 +421,33 @@ function buildGeos(m: CarModelSpec): CarGeos {
   };
 }
 
-let matCache: { glass: THREE.MeshStandardMaterial; trim: THREE.MeshStandardMaterial; wheel: THREE.MeshStandardMaterial; paint: THREE.MeshPhysicalMaterial } | null = null;
-export function carMats() {
+interface CarMats {
+  glass: THREE.MeshStandardMaterial;
+  trim: THREE.MeshStandardMaterial;
+  wheel: THREE.MeshStandardMaterial;
+  paint: THREE.MeshPhysicalMaterial;
+  /** weicher Kontaktschatten unter dem Auto (Fläche 1 x 1, auf Länge x Breite skaliert) */
+  shadow: THREE.MeshBasicMaterial;
+}
+let matCache: CarMats | null = null;
+export function carMats(): CarMats {
   if (matCache) return matCache;
   matCache = {
-    paint: new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.38, metalness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.15 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x1b2633, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.3, depthWrite: false }),
-    trim: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.45 }),
-    wheel: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.3 }),
+    // wenig Metall, viel Klarlack: die Szene hat nur schwaches Umgebungslicht, stark metallischer Lack wirkte grau und stumpf
+    paint: new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x18222e, roughness: 0.04, metalness: 0.4, transparent: true, opacity: 0.45, depthWrite: false }),
+    trim: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.35 }),
+    wheel: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.3 }),
+    shadow: new THREE.MeshBasicMaterial({
+      color: 0x000000, map: streetTextures()?.blob ?? null, transparent: true, opacity: 0.6, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -6,
+    }),
   };
   return matCache;
 }
+
+/** Fläche für den Kontaktschatten (1 x 1 m in XZ) */
+export const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 
 // --- Lackierung, Rost und Dreck als Aufleger (für fahrbare und parkende Autos gleich) ----------------
 
@@ -488,37 +534,58 @@ export function weathered(color: number, tier: number): number {
 
 type Zones = { front: number; rear: number; left: number; right: number };
 
-/** Unterteilt Dreiecke (Mittelpunkte), Normalen werden mit interpoliert. */
-function tessellate(g: THREE.BufferGeometry, iters: number): THREE.BufferGeometry {
-  let pos = g.attributes.position.array as Float32Array;
-  let nor = g.attributes.normal.array as Float32Array;
+/**
+ * Unterteilt Dreiecke für die Verformung, Normalen werden mit interpoliert. Geteilt wird jede Kante, die länger als
+ * `maxEdge` ist: Nachbardreiecke teilen eine gemeinsame Kante also gleich, es entstehen keine Risse. Kleine Teile
+ * (Fasen, Rundungen) bleiben grob, große Bleche werden fein genug, um sich weich einzudellen.
+ */
+function tessellate(g: THREE.BufferGeometry, iters: number, maxEdge = 0.14): THREE.BufferGeometry {
+  let pos = Array.from(g.attributes.position.array as Float32Array);
+  let nor = Array.from(g.attributes.normal.array as Float32Array);
+  const P = (src: number[], i: number) => [src[i * 3], src[i * 3 + 1], src[i * 3 + 2]];
+  const mid = (a: number[], b: number[], norm: boolean) => {
+    const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+    if (!norm) return m;
+    const l = Math.hypot(m[0], m[1], m[2]) || 1;
+    return [m[0] / l, m[1] / l, m[2] / l];
+  };
+  const long = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > maxEdge;
   for (let it = 0; it < iters; it++) {
-    const tris = pos.length / 9;
-    const np = new Float32Array(tris * 4 * 9), nn = new Float32Array(tris * 4 * 9);
-    const mid = (src: Float32Array, o: number, i: number, j: number, out: number[], norm: boolean) => {
-      let x = (src[o + i * 3] + src[o + j * 3]) / 2, y = (src[o + i * 3 + 1] + src[o + j * 3 + 1]) / 2, z = (src[o + i * 3 + 2] + src[o + j * 3 + 2]) / 2;
-      if (norm) {
-        const l = Math.hypot(x, y, z) || 1;
-        x /= l; y /= l; z /= l;
+    const np: number[] = [], nn: number[] = [];
+    let changed = false;
+    for (let t = 0; t < pos.length / 9; t++) {
+      // Ecken und Kanten so drehen, dass die geteilten Kanten vorn liegen (Wicklung bleibt erhalten)
+      let v = [0, 1, 2].map((k) => ({ p: P(pos, t * 3 + k), n: P(nor, t * 3 + k) }));
+      let split = [long(v[0].p, v[1].p), long(v[1].p, v[2].p), long(v[2].p, v[0].p)];
+      const cnt = split.filter(Boolean).length;
+      const rot = cnt === 1 ? split.indexOf(true) : cnt === 2 ? (split.indexOf(false) + 1) % 3 : 0;
+      v = [v[rot], v[(rot + 1) % 3], v[(rot + 2) % 3]];
+      split = [split[rot], split[(rot + 1) % 3], split[(rot + 2) % 3]];
+      const m = (i: number, j: number) => ({ p: mid(v[i].p, v[j].p, false), n: mid(v[i].n, v[j].n, true) });
+      const A = v[0], B = v[1], C = v[2];
+      let tris: (typeof A)[][];
+      if (cnt === 0) tris = [[A, B, C]];
+      else if (cnt === 1) {
+        const ab = m(0, 1);
+        tris = [[A, ab, C], [ab, B, C]];
+      } else if (cnt === 2) {
+        // geteilt: AB und BC
+        const ab = m(0, 1), bc = m(1, 2);
+        tris = [[ab, B, bc], [A, ab, bc], [A, bc, C]];
+      } else {
+        const ab = m(0, 1), bc = m(1, 2), ca = m(2, 0);
+        tris = [[A, ab, ca], [ab, B, bc], [ca, bc, C], [ab, bc, ca]];
       }
-      out.push(x, y, z);
-    };
-    for (let t = 0; t < tris; t++) {
-      const o = t * 9;
-      for (const [src, dst, norm] of [[pos, np, false], [nor, nn, true]] as [Float32Array, Float32Array, boolean][]) {
-        const ab: number[] = [], bc: number[] = [], ca: number[] = [];
-        mid(src, o, 0, 1, ab, norm); mid(src, o, 1, 2, bc, norm); mid(src, o, 2, 0, ca, norm);
-        const A = [src[o], src[o + 1], src[o + 2]], B = [src[o + 3], src[o + 4], src[o + 5]], C = [src[o + 6], src[o + 7], src[o + 8]];
-        const out = [...A, ...ab, ...ca, ...ab, ...B, ...bc, ...ca, ...bc, ...C, ...ab, ...bc, ...ca];
-        dst.set(out, t * 36);
-      }
+      if (cnt) changed = true;
+      for (const tri of tris) for (const q of tri) np.push(...q.p), nn.push(...q.n);
     }
     pos = np;
     nor = nn;
+    if (!changed) break;
   }
   const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
   return out;
 }
 
@@ -620,7 +687,10 @@ export function makeCar(color: number, model = 0, livery: Livery = 'none', tier 
   const inside = new THREE.Mesh(geos.interior, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
   for (const o of [body, under]) o.castShadow = true;
   glass.renderOrder = 2;
-  g.add(body, inside, under, glass);
+  const shadow = new THREE.Mesh(shadowGeo, mt.shadow);
+  shadow.scale.set(m.len + 0.6, 1, m.W + 0.5);
+  shadow.position.y = 0.06;
+  g.add(shadow, body, inside, under, glass);
   const decals = decalGeo(model, livery, tier);
   if (decals) g.add(new THREE.Mesh(decals, mt.trim));
 

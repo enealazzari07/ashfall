@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paintAsphaltBase, tileNoise } from './StreetTextures';
 
 type Draw = (g: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -164,6 +165,44 @@ export function signTexture(key: string): THREE.CanvasTexture | null {
       g.fillText('A9  ^  München', 24, 38);
       g.fillText('Nürnberg  >  A3', 24, 90);
     });
+  } else if (key === 'pylon') {
+    // Preismast der Tankstelle: Marke oben, darunter Preise in Leuchtziffern (manche Stellen sind ausgefallen)
+    tex = make(256, 336, (g, w, h) => {
+      g.fillStyle = '#f2f0ea';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#b8322a';
+      g.fillRect(0, 0, w, 120);
+      g.fillStyle = '#f2f0ea';
+      g.beginPath();
+      g.arc(w / 2, 58, 40, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#b8322a';
+      g.font = 'bold 34px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('GAS', w / 2, 60);
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 112, w, 6);
+      const rows: [string, string][] = [['REGULAR', '3.4_9'], ['SUPER', '3.8_'], ['DIESEL', '_.99']];
+      rows.forEach(([name, price], i) => {
+        const y = 140 + i * 64;
+        g.fillStyle = '#1b1d22';
+        g.fillRect(10, y, w - 20, 54);
+        g.fillStyle = '#d9d6cc';
+        g.font = 'bold 18px sans-serif';
+        g.textAlign = 'left';
+        g.fillText(name, 20, y + 27);
+        g.fillStyle = '#ff8a2a';
+        g.font = 'bold 34px monospace';
+        g.textAlign = 'right';
+        g.fillText(price.replace(/_/g, ' '), w - 20, y + 29);
+      });
+      // Rost und Dreck
+      for (let i = 0; i < 40; i++) {
+        g.fillStyle = `rgba(110,70,40,${Math.random() * 0.25})`;
+        g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 8, 2 + Math.random() * 14);
+      }
+    });
   } else if (key.startsWith('shop:')) {
     const [name, col] = key.slice(5).split('|');
     tex = make(512, 96, (g, w, h) => {
@@ -264,72 +303,82 @@ export function textures(): Textures {
         g.fillRect(x - 8, y - 8, 16, 16);
       }
     }),
+    // Kachel 8 m, nahtlos: Elemente am Rand werden auf der Gegenseite fortgesetzt. Großflächige Farbwechsel kommen
+    // nicht aus der Kachel (die würden sich alle 8 m wiederholen), sondern aus dem Boden-Shader (siehe Materials.ts).
     grass: make(512, 512, (g, w, h) => {
-      g.fillStyle = '#56753f';
-      g.fillRect(0, 0, w, h);
-      // große Farbwolken (trockene und satte Stellen), Erdflecken
-      const cloud = (rgba: string, rMin: number, rMax: number, count: number) => {
-        for (let i = 0; i < count; i++) {
-          const x = Math.random() * w, y = Math.random() * h, r = rMin + Math.random() * (rMax - rMin);
-          const gr = g.createRadialGradient(x, y, 0, x, y, r);
-          gr.addColorStop(0, rgba);
-          gr.addColorStop(1, 'rgba(0,0,0,0)');
-          g.fillStyle = gr;
-          g.fillRect(x - r, y - r, r * 2, r * 2);
+      const img = g.createImageData(w, h);
+      const r = (() => {
+        let s = 99;
+        return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+      })();
+      const mid = tileNoise(w, 32, r), fine = tileNoise(w, 8, r);
+      for (let i = 0; i < w * h; i++) {
+        const v = (mid[i] - 0.5) * 18 + (fine[i] - 0.5) * 14 + (r() - 0.5) * 16;
+        img.data[i * 4] = 82 + v * 0.8;
+        img.data[i * 4 + 1] = 108 + v;
+        img.data[i * 4 + 2] = 60 + v * 0.6;
+        img.data[i * 4 + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      /** zeichnet `fn` an (x, y) und – wenn es über den Rand ragt – auch versetzt auf der Gegenseite */
+      const wrap = (x: number, y: number, m: number, fn: (x: number, y: number) => void) => {
+        for (const dx of [-w, 0, w]) {
+          for (const dy of [-h, 0, h]) {
+            const xx = x + dx, yy = y + dy;
+            if (xx > -m && xx < w + m && yy > -m && yy < h + m) fn(xx, yy);
+          }
         }
       };
-      cloud('rgba(120,140,70,0.22)', 40, 110, 14);
-      cloud('rgba(35,70,30,0.22)', 40, 100, 14);
-      cloud('rgba(110,90,55,0.16)', 14, 40, 8);
-      speckle(g, w, h, 5200, ['#6b8a50', '#557240', '#738f55', '#4e6a3b', '#7a9a5a', '#43602f'], 3);
-      // tausende Halme als kurze, leicht gebogene Striche in mehreren Grüntönen
+      // Halme als kurze, leicht gebogene Striche in mehreren Grüntönen
       const blades = ['rgba(34,66,26,0.55)', 'rgba(70,110,45,0.6)', 'rgba(112,150,70,0.6)', 'rgba(150,176,92,0.5)', 'rgba(92,120,52,0.55)'];
-      for (let i = 0; i < 4200; i++) {
-        const x = Math.random() * w, y = Math.random() * h, len = 4 + Math.random() * 9, lean = (Math.random() - 0.5) * 7;
+      for (let i = 0; i < 5200; i++) {
+        const x = r() * w, y = r() * h, len = 4 + r() * 9, lean = (r() - 0.5) * 7, lw = 0.8 + r() * 0.9;
         g.strokeStyle = blades[i % blades.length];
-        g.lineWidth = 0.8 + Math.random() * 0.9;
-        g.beginPath();
-        g.moveTo(x, y);
-        g.quadraticCurveTo(x + lean * 0.3, y - len * 0.6, x + lean, y - len);
-        g.stroke();
-      }
-      // Kleeblätter und Gänseblümchen
-      for (let i = 0; i < 70; i++) {
-        const x = Math.random() * w, y = Math.random() * h;
-        g.fillStyle = 'rgba(60,110,50,0.7)';
-        for (let k = 0; k < 3; k++) {
+        g.lineWidth = lw;
+        wrap(x, y, 14, (xx, yy) => {
           g.beginPath();
-          g.arc(x + Math.cos(k * 2.1) * 2.2, y + Math.sin(k * 2.1) * 2.2, 2, 0, 6.3);
-          g.fill();
-        }
+          g.moveTo(xx, yy);
+          g.quadraticCurveTo(xx + lean * 0.3, yy - len * 0.6, xx + lean, yy - len);
+          g.stroke();
+        });
       }
-      for (let i = 0; i < 26; i++) {
-        const x = Math.random() * w, y = Math.random() * h;
+      // Kleeblätter und vereinzelte Blüten
+      for (let i = 0; i < 70; i++) {
+        const x = r() * w, y = r() * h;
+        g.fillStyle = 'rgba(60,110,50,0.7)';
+        wrap(x, y, 6, (xx, yy) => {
+          for (let k = 0; k < 3; k++) {
+            g.beginPath();
+            g.arc(xx + Math.cos(k * 2.1) * 2.2, yy + Math.sin(k * 2.1) * 2.2, 2, 0, 6.3);
+            g.fill();
+          }
+        });
+      }
+      for (let i = 0; i < 20; i++) {
+        const x = r() * w, y = r() * h, rad = 1.6 + r() * 1.2;
         g.fillStyle = ['#f2f2ea', '#f3e27a', '#e6a8c4', '#ffffff'][i % 4];
-        g.beginPath();
-        g.arc(x, y, 1.6 + Math.random() * 1.2, 0, 6.3);
-        g.fill();
+        wrap(x, y, 4, (xx, yy) => {
+          g.beginPath();
+          g.arc(xx, yy, rad, 0, 6.3);
+          g.fill();
+        });
       }
     }),
 
-    // Textur-Höhe = Straßenbreite (8 m): Mittellinie + Randlinien
-    asphalt: make(256, 256, (g, w, h) => {
-      g.fillStyle = '#3b3c41';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2200, ['#45464b', '#303136', '#4c4d52', '#2a2b2f'], 2);
-      g.fillStyle = 'rgba(200,200,200,0.55)';
-      g.fillRect(0, 8, w, 4);
-      g.fillRect(0, h - 12, w, 4);
-      g.fillStyle = '#d9b94a';
-      g.fillRect(0, h / 2 - 4, w * 0.5, 8);
-      g.strokeStyle = 'rgba(0,0,0,0.35)';
-      g.lineWidth = 1.5;
-      for (let i = 0; i < 6; i++) {
-        g.beginPath();
-        let x = Math.random() * w, y = Math.random() * h;
-        g.moveTo(x, y);
-        for (let k = 0; k < 4; k++) g.lineTo((x += (Math.random() - 0.3) * 18), (y += (Math.random() - 0.5) * 14));
-        g.stroke();
+    // Kachel 8 m (u), Textur-Höhe = Straßenbreite: feiner Asphalt, gestrichelte Mittellinie, Randlinien (kurvige Straßen)
+    asphalt: make(512, 512, (g, w, h) => {
+      paintAsphaltBase(g, w, 11);
+      g.fillStyle = 'rgba(214,212,204,0.8)';
+      g.fillRect(0, 14, w, 6);
+      g.fillRect(0, h - 20, w, 6);
+      g.fillStyle = 'rgba(217,185,74,0.9)';
+      g.fillRect(0, h / 2 - 4, w * 0.4, 8);
+      // Abrieb: Asphaltkörner über den Linien
+      for (let i = 0; i < 900; i++) {
+        const v = 50 + Math.random() * 30;
+        g.fillStyle = `rgba(${v},${v},${v + 3},${0.3 + Math.random() * 0.5})`;
+        const y = [17, h - 17, h / 2][i % 3] + (Math.random() - 0.5) * 9;
+        g.fillRect(Math.random() * w, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
       }
     }),
 
@@ -630,18 +679,16 @@ export function textures(): Textures {
       speckle(g, w, h, 1800, ['#6e6b65', '#9a978f', '#77746d', '#a6a39b', '#5e5c57'], 3);
     }),
 
-    asphaltPlain: make(256, 256, (g, w, h) => {
-      g.fillStyle = '#34353a';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2500, ['#3d3e43', '#2b2c30', '#47484d'], 2);
-    }),
+    asphaltPlain: make(512, 512, (g, w) => paintAsphaltBase(g, w, 13)),
 
     // Kachel 8 m (u) x 22 m (v): 2x2 Spuren, Mittelstreifen, Seitenstreifen
     highway: make(128, 352, (g, w, h) => {
       const m = 16; // px pro Meter
-      g.fillStyle = '#34353a';
-      g.fillRect(0, 0, w, h);
-      speckle(g, w, h, 2500, ['#3d3e43', '#2b2c30', '#47484d'], 2);
+      // feiner Asphalt (gleiche Körnung wie die Stadtstraßen): 128-px-Kachel nahtlos übereinander
+      const base = document.createElement('canvas');
+      base.width = base.height = 128;
+      paintAsphaltBase(base.getContext('2d')!, 128, 19);
+      for (let y = 0; y < h; y += 128) g.drawImage(base, 0, y);
       g.fillStyle = '#8f8d86'; // Mittelstreifen (Beton)
       g.fillRect(0, 9.5 * m, w, 3 * m);
       g.fillStyle = '#e8e8e8';

@@ -1,12 +1,100 @@
 import * as THREE from 'three';
 import { glassTexture, normalMapOf, signTexture, textures } from './Textures';
 import { farmTexture } from './FarmAssets';
+import { carMats } from './CarModel';
 import { applyXray } from './Xray';
+import { StreetTex, groundMacro, streetTextures } from './StreetTextures';
 
 /** Windzeit für Gras und Blumen (Sekunden); wird beim Zeichnen der Büschel gesetzt */
 export const windTime = { value: 0 };
 
+export type DecalName = 'crack' | 'crack2' | 'crack3' | 'alligator' | 'patch' | 'trench' | 'stain' | 'puddle' | 'track' | 'skid' | 'tar'
+  | 'pothole' | 'pothole2' | 'pothole3' | 'grate';
+
 const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 0.9, ...o });
+
+/**
+ * Textur in Weltkoordinaten (x, -z) / tile Meter: nahtlos über Chunks, Kreuzungen und skalierte Instanzen,
+ * ohne dass die Geometrie passende UVs braucht.
+ */
+function worldUV<T extends THREE.Material>(m: T, tile: number): T {
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace(
+      '#include <uv_vertex>',
+      `#include <uv_vertex>
+      {
+        vec4 wq = vec4( position, 1.0 );
+        #ifdef USE_INSTANCING
+        wq = instanceMatrix * wq;
+        #endif
+        wq = modelMatrix * wq;
+        vec2 wuv = vec2( wq.x, -wq.z ) / ${tile.toFixed(3)};
+        #ifdef USE_MAP
+        vMapUv = wuv;
+        #endif
+        #ifdef USE_NORMALMAP
+        vNormalMapUv = wuv;
+        #endif
+      }`,
+    );
+  };
+  m.customProgramCacheKey = () => `wuv${tile}`;
+  return m;
+}
+
+/**
+ * Wiese ohne sichtbares Kachelraster: Textur in Weltkoordinaten in zwei Maßstäben (8 m und gedreht 13,7 m),
+ * gemischt über großflächiges Rauschen, dazu trockene, satte und erdige Stellen (~110 m) und Helligkeitswechsel (~37 m).
+ */
+function grassGround(m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+  const macro = { value: groundMacro() };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uMacro = macro;
+    sh.vertexShader = sh.vertexShader
+      .replace('void main() {', 'varying vec2 vGroundW;\nvoid main() {')
+      .replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>
+        {
+          vec4 wq = modelMatrix * vec4( position, 1.0 );
+          vGroundW = vec2( wq.x, -wq.z );
+          #ifdef USE_MAP
+          vMapUv = vGroundW / 8.0;
+          #endif
+          #ifdef USE_NORMALMAP
+          vNormalMapUv = vGroundW / 8.0;
+          #endif
+        }`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', 'uniform sampler2D uMacro;\nvarying vec2 vGroundW;\nvoid main() {')
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+        {
+          vec3 mc = texture2D( uMacro, vGroundW / 110.0 ).rgb;
+          float mid = texture2D( uMacro, mat2( 0.6, 0.8, -0.8, 0.6 ) * vGroundW / 37.0 + 0.5 ).g;
+          vec4 ga = texture2D( map, vGroundW / 8.0 );
+          vec4 gb = texture2D( map, mat2( 0.8, -0.6, 0.6, 0.8 ) * vGroundW / 13.7 + 0.37 );
+          vec4 sampledDiffuseColor = mix( ga, gb, smoothstep( 0.32, 0.68, mc.r ) );
+          // trocken (gelblich) bis satt (dunkelgrün), dazu erdige Stellen
+          vec3 dry = vec3( 1.22, 1.06, 0.66 ), lush = vec3( 0.7, 0.9, 0.72 );
+          sampledDiffuseColor.rgb *= mix( lush, dry, smoothstep( 0.2, 0.85, mc.g ) );
+          sampledDiffuseColor.rgb *= 0.86 + 0.26 * mid;
+          float dirt = smoothstep( 0.62, 0.84, mc.b ) * 0.6;
+          sampledDiffuseColor.rgb = mix( sampledDiffuseColor.rgb, sampledDiffuseColor.rgb * vec3( 1.1, 0.88, 0.7 ), dirt );
+          diffuseColor *= sampledDiffuseColor;
+        }
+        #endif`,
+      );
+  };
+  m.customProgramCacheKey = () => 'grassGround';
+  return m;
+}
+
+/** Aufleger (Risse, Flicken, Flecken): durchsichtig, schreibt keine Tiefe, liegt per Polygon-Offset sicher oben */
+const decal = (map: THREE.Texture | null, o: THREE.MeshStandardMaterialParameters = {}) =>
+  std({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4, ...o });
 
 export interface Mats {
   ground: THREE.MeshStandardMaterial;
@@ -63,6 +151,18 @@ export interface Mats {
   prop(color: number): THREE.MeshStandardMaterial;
   train(color: number): THREE.MeshStandardMaterial;
   sign(key: string): THREE.MeshBasicMaterial;
+  /** Stadtstraße ohne Linien (Weltkoordinaten-UV, 8 m) */
+  street: THREE.MeshStandardMaterial;
+  /** Gehwegplatten in Weltkoordinaten (2 m): keine Verzerrung bei gestreckten Streifen */
+  sidewalk: THREE.MeshStandardMaterial;
+  curb: THREE.MeshStandardMaterial;
+  /** Rinne aus Granitpflaster vor dem Bordstein */
+  gutter: THREE.MeshStandardMaterial;
+  /** Fahrbahnmarkierung mit Abrieb; Farbe (weiß/gelb) pro Instanz */
+  markPaint: THREE.MeshStandardMaterial;
+  manhole: THREE.MeshStandardMaterial;
+  /** Aufleger je Textur, Farbe pro Instanz */
+  decal(name: DecalName): THREE.MeshStandardMaterial;
 }
 
 let cache: Mats | null = null;
@@ -114,6 +214,8 @@ export function mats(): Mats {
   const props = new Map<number, THREE.MeshStandardMaterial>();
   const trains = new Map<number, THREE.MeshStandardMaterial>();
   const signs = new Map<string, THREE.MeshBasicMaterial>();
+  const decals = new Map<string, THREE.MeshStandardMaterial>();
+  const st: StreetTex | null = streetTextures();
   const memo = <K, V>(m: Map<K, V>, k: K, make: () => V): V => {
     let v = m.get(k);
     if (!v) m.set(k, (v = make()));
@@ -125,7 +227,7 @@ export function mats(): Mats {
     return normalMap ? { normalMap, normalScale: new THREE.Vector2(scale, scale) } : {};
   };
   cache = {
-    ground: std({ map: t.grass, roughness: 1, ...n(t.grass, 3, 0.8) }),
+    ground: grassGround(std({ map: t.grass, roughness: 1, ...n(t.grass, 3, 0.8) })),
     road: std({ map: t.asphalt, roughness: 0.92, ...n(t.asphalt, 2, 0.4) }),
     highway: std({ map: t.highway, roughness: 0.92, ...n(t.highway, 2, 0.4) }),
     ramp: std({ map: t.asphaltPlain, roughness: 0.92, ...n(t.asphaltPlain, 2, 0.4) }),
@@ -206,6 +308,14 @@ export function mats(): Mats {
     roof: (color) => memo(roofs, color, () => std({ color, map: t.roof, side: THREE.DoubleSide, ...n(t.roof, 3, 1) })),
     prop: (color) => memo(props, color, () => std({ color, roughness: 0.85 })),
     train: (color) => memo(trains, color, () => applyXray(std({ color, metalness: 0.2, roughness: 0.6 }))),
+    street: worldUV(std({ map: st?.street ?? null, roughness: 0.93, ...n(st?.street ?? null, 2.2, 0.55) }), 8),
+    sidewalk: worldUV(std({ map: t.paving, ...n(t.paving, 3, 1) }), 2),
+    curb: std({ map: st?.curb ?? null, roughness: 0.85, ...n(st?.curb ?? null, 2, 0.6) }),
+    gutter: worldUV(std({ map: st?.cobble ?? null, roughness: 0.9, ...n(st?.cobble ?? null, 3, 1) }), 1),
+    markPaint: worldUV(decal(st?.paint ?? null, { roughness: 0.7 }), 5),
+    manhole: std({ map: st?.manhole ?? null, metalness: 0.45, roughness: 0.65, ...n(st?.manhole ?? null, 3, 1) }),
+    // Pfützen spiegeln (glatt), Verguss glänzt leicht
+    decal: (name) => memo(decals, name, () => decal(st?.[name] ?? null, name === 'puddle' ? { roughness: 0.08, metalness: 0.2 } : name === 'tar' ? { roughness: 0.35 } : {})),
     sign: (key) =>
       memo(signs, key, () => new THREE.MeshBasicMaterial({
         map: signTexture(key), transparent: true, alphaTest: 0.4, // FrontSide: Rückseite ist eine eigene Platte
@@ -231,10 +341,14 @@ export function setWetness(wet: number): void {
     const base = (mat.userData.base ??= mat.color.clone()) as THREE.Color;
     mat.color.copy(base).multiplyScalar(1 - k * wet);
   };
-  for (const [mat, dry] of [[m.road, 0.92], [m.highway, 0.92], [m.ramp, 0.92], [m.paving, 0.9], [m.concrete, 0.9]] as const) {
+  for (const [mat, dry] of [
+    [m.road, 0.92], [m.highway, 0.92], [m.ramp, 0.92], [m.paving, 0.9], [m.concrete, 0.9],
+    [m.street, 0.93], [m.sidewalk, 0.9], [m.curb, 0.85], [m.gutter, 0.9],
+  ] as const) {
     mat.roughness = dry - 0.6 * wet;
     darken(mat, 0.3);
   }
   darken(m.ground, 0.18);
-  for (const r of [m.carBody, m.glass]) r.envMapIntensity = 1 + wet;
+  const cm = carMats();
+  for (const r of [m.carBody, m.glass, cm.paint, cm.glass]) r.envMapIntensity = 1 + wet;
 }
